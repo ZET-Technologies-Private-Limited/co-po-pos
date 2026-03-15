@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cosmic: #0F172A;
+  --color-brand: #1D4ED8;
+  --color-aurora: #06B6D4;
+  --color-insight: #7C3AED;
+  --color-attain: #059669;
+  --color-alert: #D97706;
+  --color-surface: #F8FAFC;
+  --color-glass: rgba(255, 255, 255, 0.85);
+  
+  --font-display: var(--font-bricolage);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-jetbrains);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-cosmic); /* Changed to cosmic by default for a stellar feel */
+    color: var(--color-surface);
+  }
+  
+  ::selection {
+    background-color: var(--color-brand);
+    color: white;
+  }
+  
+  /* Typography Scale */
+  h1, .text-display { 
+    font-size: clamp(2.5rem, 5vw, 5rem); 
+    font-family: var(--font-display); 
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  h2, .text-h1 { 
+    font-size: clamp(2rem, 3.5vw, 3rem); 
+    font-family: var(--font-display); 
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  h3, .text-h2 { 
+    font-size: clamp(1.5rem, 2.5vw, 2.25rem); 
+    font-family: var(--font-sans); 
+    font-weight: 600; 
+  }
+  p, .text-body { 
+    font-size: clamp(0.9rem, 1.2vw, 1.05rem); 
+    line-height: 1.6;
+  }
+  .text-caption { 
+    font-size: 0.8rem; 
+    color: rgba(248, 250, 252, 0.7); /* Surface pearl semi-transparent */
+  }
+}

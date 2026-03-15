@@ -1,0 +1,76 @@
+version: "3.1"
+
+rules:
+
+- rule: Say goodbye anytime the user says goodbye
+  steps:
+  - intent: goodbye
+  - action: utter_goodbye
+
+- rule: Say 'I am a bot' anytime the user challenges
+  steps:
+  - intent: out_of_scope
+  - action: utter_out_of_scope
+
+- rule: Activate co_generation_form
+  steps:
+  - intent: start_co_generation
+  - action: action_start_co_generation
+  - active_loop: co_generation_form
+
+- rule: Submit co_generation_form
+  condition:
+  - active_loop: co_generation_form
+  steps:
+  - action: co_generation_form
+  - active_loop: null
+  - slot_was_set:
+    - requested_slot: null
+  - action: action_parse_syllabus
+
+- rule: Activate exam_config_form
+  steps:
+  - intent: setup_exam
+  - action: action_start_exam_config_form
+  - active_loop: exam_config_form
+
+- rule: Submit exam_config_form
+  condition:
+  - active_loop: exam_config_form
+  steps:
+  - action: exam_config_form
+  - active_loop: null
+  - slot_was_set:
+    - requested_slot: null
+
+- rule: Ask for course_id if not provided
+  condition:
+  - active_loop: co_generation_form
+  - slot_was_set:
+    - requested_slot: course_id
+  steps:
+  - action: utter_ask_course_id
+
+- rule: Ask for co_count if not provided
+  condition:
+  - active_loop: co_generation_form
+  - slot_was_set:
+    - requested_slot: co_count
+  steps:
+  - action: utter_ask_co_count
+
+- rule: Ask for exam_type if not provided
+  condition:
+  - active_loop: exam_config_form
+  - slot_was_set:
+    - requested_slot: exam_type
+  steps:
+  - action: utter_ask_exam_type
+
+- rule: Ask for max_marks if not provided
+  condition:
+  - active_loop: exam_config_form
+  - slot_was_set:
+    - requested_slot: max_marks
+  steps:
+  - action: utter_ask_max_marks

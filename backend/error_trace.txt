@@ -1,0 +1,143 @@
+(trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\passlib\handlers\bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+AttributeError: module 'bcrypt' has no attribute '__about__'
+[*] Creating all user roles in database...
+[*] Database URL: postgresql+asyncpg://postgres:server@localhost:5432/co_po_pso_db
+
+[*] Creating departments...
+  [+] Created department: Computer Science and Engineering
+  [+] Created department: Electronics and Communication Engineering
+  [+] Created department: Mechanical Engineering
+  [+] Created department: Civil Engineering
+  [+] Created department: Electrical and Electronics Engineering
+  [+] Created department: Administration
+
+[*] Creating users for all roles...
+  [+] Created admin: admin (System Administrator)
+  [+] Created admin: superadmin (Super Administrator)
+  [+] Created hod: hod_cse (Dr. Rajesh Kumar (HOD CSE))
+  [+] Created hod: hod_ece (Dr. Priya Sharma (HOD ECE))
+  [+] Created hod: hod_me (Dr. Amit Singh (HOD ME))
+  [+] Created course_lead: lead_cs101 (Dr. Sunita Verma (Course Lead))
+Traceback (most recent call last):
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 557, in _prepare_and_execute
+    self._rows = await prepared_stmt.fetch(*parameters)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\asyncpg\prepared_stmt.py", line 176, in fetch
+    data = await self.__bind_execute(args, 0, timeout)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\asyncpg\prepared_stmt.py", line 241, in __bind_execute
+    data, status, _ = await self.__do_execute(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\asyncpg\prepared_stmt.py", line 230, in __do_execute
+    return await executor(protocol)
+  File "asyncpg\protocol\protocol.pyx", line 207, in bind_execute
+asyncpg.exceptions.InvalidTextRepresentationError: invalid input value for enum userrole: "COURSE_LEAD"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\default.py", line 922, in do_execute
+    cursor.execute(statement, parameters)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 591, in execute
+    self._adapt_connection.await_(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 125, in await_only
+    return current.driver.switch(awaitable)  # type: ignore[no-any-return]
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 185, in greenlet_spawn
+    value = await result
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 569, in _prepare_and_execute
+    self._handle_exception(error)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 520, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 808, in _handle_exception
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.Error: <class 'asyncpg.exceptions.InvalidTextRepresentationError'>: invalid input value for enum userrole: "COURSE_LEAD"
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Projects\CO-PO-POS\backend\scripts\create_all_roles.py", line 323, in main
+    await create_all_roles()
+  File "D:\Projects\CO-PO-POS\backend\scripts\create_all_roles.py", line 49, in create_all_roles
+    await create_users_and_departments(session)
+  File "D:\Projects\CO-PO-POS\backend\scripts\create_all_roles.py", line 256, in create_users_and_departments
+    result = await session.execute(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\ext\asyncio\session.py", line 455, in execute
+    result = await greenlet_spawn(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 192, in greenlet_spawn
+    result = context.switch(value)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 2308, in execute
+    return self._execute_internal(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 2169, in _execute_internal
+    ) = compile_state_cls.orm_pre_session_exec(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\context.py", line 551, in orm_pre_session_exec
+    session._autoflush()
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 3021, in _autoflush
+    raise e.with_traceback(sys.exc_info()[2])
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 3010, in _autoflush
+    self.flush()
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 4312, in flush
+    self._flush(objects)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 4447, in _flush
+    with util.safe_reraise():
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\util\langhelpers.py", line 146, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\session.py", line 4408, in _flush
+    flush_context.execute()
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\unitofwork.py", line 466, in execute
+    rec.execute(self)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\persistence.py", line 93, in save_obj
+    _emit_insert_statements(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\orm\persistence.py", line 1043, in _emit_insert_statements
+    result = connection.execute(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 1416, in execute
+    return meth(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\sql\elements.py", line 516, in _execute_on_connection
+    return connection._execute_clauseelement(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 1639, in _execute_clauseelement
+    ret = self._execute_context(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 1848, in _execute_context
+    return self._exec_single_context(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 1988, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 2343, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\base.py", line 1969, in _exec_single_context
+    self.dialect.do_execute(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\engine\default.py", line 922, in do_execute
+    cursor.execute(statement, parameters)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 591, in execute
+    self._adapt_connection.await_(
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 125, in await_only
+    return current.driver.switch(awaitable)  # type: ignore[no-any-return]
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 185, in greenlet_spawn
+    value = await result
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 569, in _prepare_and_execute
+    self._handle_exception(error)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 520, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "D:\Projects\CO-PO-POS\backend\.venv\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 808, in _handle_exception
+    raise translated_error from error
+sqlalchemy.exc.DBAPIError: (raised as a result of Query-invoked autoflush; consider using a session.no_autoflush block if this flush is occurring prematurely)
+(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.InvalidTextRepresentationError'>: invalid input value for enum userrole: "COURSE_LEAD"
+[SQL: INSERT INTO users (id, username, email, full_name, hashed_password, role, department, is_active, is_verified, created_at, updated_at) VALUES ($1::VARCHAR, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::userrole, $7::VARCHAR, $8::BOOLEAN, $9::BOOLEAN, $10::TIMESTAMP WITHOUT TIME ZONE, $11::TIMESTAMP WITHOUT TIME ZONE)]
+[parameters: ('f994e7ed-4f7a-4d0a-821c-184d4c731776', 'lead_cs101', 'lead.cs101@university.edu', 'Dr. Sunita Verma (Course Lead)', '$2b$12$OWjoyIQQ69ap7FFS3oL53OYCsDU7ZaTzItisqLx0wld.iT/XoW7uq', 'COURSE_LEAD', 'Computer Science and Engineering', True, True, datetime.datetime(2026, 3, 15, 4, 42, 49, 568605), datetime.datetime(2026, 3, 15, 4, 42, 49, 568605))]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Projects\CO-PO-POS\backend\scripts\create_all_roles.py", line 336, in <module>
+    exit_code = asyncio.run(main())
+  File "C:\Users\sadwi\AppData\Local\Programs\Python\Python310\lib\asyncio\runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "C:\Users\sadwi\AppData\Local\Programs\Python\Python310\lib\asyncio\base_events.py", line 641, in run_until_complete
+    return future.result()
+  File "D:\Projects\CO-PO-POS\backend\scripts\create_all_roles.py", line 327, in main
+    print(f"\n[\u2717] Setup failed: {str(e)}")
+  File "C:\Users\sadwi\AppData\Local\Programs\Python\Python310\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2717' in position 3: character maps to <undefined>

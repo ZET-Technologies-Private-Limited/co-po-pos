@@ -1,0 +1,178 @@
+version: "3.1"
+
+intents:
+  - greet
+  - goodbye
+  - affirm
+  - deny
+  - start_co_generation
+  - provide_syllabus
+  - confirm_po_pso
+  - request_co_count
+  - approve_cos
+  - edit_co
+  - regenerate_cos
+  - regenerate_single_co
+  - explain_co_bt
+  - setup_exam
+  - provide_exam_type
+  - provide_max_marks
+  - analyse_question
+  - map_question_co
+  - upload_marks_intent
+  - explain_attainment
+  - ask_po_attainment
+  - ask_ay_history
+  - ask_low_co
+  - out_of_scope
+
+entities:
+  - course_code
+  - co_number
+  - co_count
+  - exam_type
+  - max_marks
+  - question_text
+  - bt_level
+  - academic_year
+  - po_number
+  - syllabus_text
+
+slots:
+  course_id:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: from_text
+      conditions:
+      - active_loop: null
+        requested_slot: course_id
+  
+  current_co_draft:
+    type: list
+    influence_conversation: true
+    mappings:
+    - type: custom
+  
+  syllabus_parsed:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: syllabus_text
+  
+  po_list:
+    type: list
+    influence_conversation: true
+    mappings:
+    - type: custom
+  
+  co_count:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: co_count
+  
+  exam_type:
+    type: categorical
+    values:
+    - T1
+    - T2
+    - T3
+    - T4
+    - T5
+    - SEE
+    - Assignment
+    - Practical
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: exam_type
+  
+  exam_id:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: custom
+  
+  question_under_analysis:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: question_text
+  
+  last_attainment_query:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: custom
+  
+  user_role:
+    type: categorical
+    values:
+    - FACULTY
+    - LEAD
+    - HOD
+    - ADMIN
+    - STUDENT
+    influence_conversation: true
+    mappings:
+    - type: custom
+
+responses:
+  utter_greet:
+  - text: "Hello! I'm your OBE Assistant. I can help you with Course Outcomes, Program Outcomes, attainment calculations, and more. What would you like to do today?"
+
+  utter_goodbye:
+  - text: "Goodbye! Feel free to ask me anything about OBE anytime."
+
+  utter_out_of_scope:
+  - text: "I'm specialized in Outcome-Based Education. I can help with CO generation, PO mapping, attainment calculations, exam analysis, and reports. Could you rephrase your question in terms of OBE?"
+
+  utter_ask_course_id:
+  - text: "Which course would you like to work with? Please provide the course code (e.g., CS301)."
+
+  utter_ask_co_count:
+  - text: "How many Course Outcomes would you like me to generate? (Recommended: 4-6)"
+
+  utter_ask_exam_type:
+  - text: "What type of exam is this? (T1, T2, T3, T4, T5, SEE, Assignment, Practical)"
+
+  utter_ask_max_marks:
+  - text: "What is the maximum marks for this exam?"
+
+actions:
+  - action_start_co_generation
+  - action_parse_syllabus
+  - action_confirm_po_pso
+  - action_generate_cos
+  - action_edit_co
+  - action_save_cos
+  - action_regenerate_cos
+  - action_regenerate_single_co
+  - action_explain_co_bt
+  - action_start_exam_config_form
+  - action_analyse_question
+  - action_override_question_co
+  - action_guide_marks_upload
+  - action_explain_attainment
+  - action_get_po_attainment
+  - action_get_ay_history
+  - action_list_low_cos
+
+forms:
+  co_generation_form:
+    required_slots:
+    - course_id
+    - co_count
+
+  exam_config_form:
+    required_slots:
+    - exam_type
+    - max_marks
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true

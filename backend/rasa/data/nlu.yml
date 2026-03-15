@@ -1,0 +1,238 @@
+version: "3.1"
+
+nlu:
+- intent: greet
+  examples: |
+    - hello
+    - hi
+    - good morning
+    - good afternoon
+    - hey there
+    - greetings
+    - hi there
+    - hello there
+
+- intent: goodbye
+  examples: |
+    - bye
+    - goodbye
+    - see you later
+    - talk to you later
+    - bye bye
+    - farewell
+    - catch you later
+    - thanks, bye
+
+- intent: affirm
+  examples: |
+    - yes
+    - yeah
+    - correct
+    - right
+    - that's right
+    - exactly
+    - sure
+    - of course
+    - definitely
+    - absolutely
+
+- intent: deny
+  examples: |
+    - no
+    - nope
+    - not really
+    - I don't think so
+    - no way
+    - not correct
+    - that's wrong
+    - incorrect
+    - disagree
+
+- intent: start_co_generation
+  examples: |
+    - generate course outcomes
+    - create COs
+    - I need course outcomes
+    - generate COs for my course
+    - create course outcomes for [CS301](course_code)
+    - generate outcomes for [CS302](course_code)
+    - I want to create COs
+    - help me generate course outcomes
+    - start CO generation
+    - create new course outcomes
+
+- intent: provide_syllabus
+  examples: |
+    - here is my syllabus
+    - syllabus: [Unit 1: Arrays and Linked Lists, Unit 2: Stacks and Queues](syllabus_text)
+    - the syllabus is [Data Structures: Arrays, Trees, Graphs, Sorting Algorithms](syllabus_text)
+    - syllabus content: [Programming fundamentals, OOP concepts, Data structures](syllabus_text)
+    - here's the course content [Algorithms, Complexity Analysis, Dynamic Programming](syllabus_text)
+
+- intent: confirm_po_pso
+  examples: |
+    - yes use these POs
+    - confirm program outcomes
+    - use default POs
+    - these POs look good
+    - proceed with these program outcomes
+    - yes, use these PSOs
+    - confirm PSOs
+    - default PSOs are fine
+
+- intent: request_co_count
+  examples: |
+    - generate [5](co_count) COs
+    - I want [4](co_count) course outcomes
+    - create [6](co_count) outcomes
+    - make [5](co_count) COs
+    - [4](co_count) course outcomes please
+    - generate [6](co_count) course outcomes
+
+- intent: approve_cos
+  examples: |
+    - these look good
+    - save these COs
+    - approve course outcomes
+    - confirm and save
+    - these COs are perfect
+    - save them
+    - looks great, save
+    - approve these outcomes
+
+- intent: edit_co
+  examples: |
+    - change [CO3](co_number)
+    - edit [CO2](co_number)
+    - modify [CO1](co_number)
+    - [CO4](co_number) should say analyze
+    - rephrase [CO2](co_number)
+    - update [CO3](co_number)
+    - fix [CO1](co_number)
+
+- intent: regenerate_cos
+  examples: |
+    - regenerate all COs
+    - redo course outcomes
+    - generate again
+    - not satisfied with these
+    - create new ones
+    - start over
+    - regenerate everything
+
+- intent: regenerate_single_co
+  examples: |
+    - regenerate [CO3](co_number) only
+    - redo [CO2](co_number)
+    - regenerate just [CO1](co_number)
+    - only [CO4](co_number) needs regeneration
+    - fix [CO2](co_number) only
+
+- intent: explain_co_bt
+  examples: |
+    - why is [CO3](co_number) [L4](bt_level)
+    - explain bloom level for [CO2](co_number)
+    - why [analyze](bt_level) for [CO1](co_number)
+    - explain BT level
+    - why this bloom taxonomy level
+    - what does [L3](bt_level) mean
+
+- intent: setup_exam
+  examples: |
+    - configure [T1](exam_type)
+    - setup [Unit Test 2](exam_type)
+    - add question paper
+    - create new exam
+    - configure [SEE](exam_type)
+    - setup [Assignment](exam_type)
+    - add [T3](exam_type) exam
+
+- intent: provide_exam_type
+  examples: |
+    - [T1](exam_type)
+    - [T2](exam_type)
+    - [Unit Test 1](exam_type)
+    - [SEE](exam_type)
+    - [Assignment](exam_type)
+    - [Practical](exam_type)
+    - [T5](exam_type)
+
+- intent: provide_max_marks
+  examples: |
+    - [20](max_marks) marks
+    - maximum is [100](max_marks)
+    - [50](max_marks) marks total
+    - total marks [75](max_marks)
+    - [30](max_marks) marks maximum
+
+- intent: analyse_question
+  examples: |
+    - analyze this question: [Design a hash function for string keys](question_text)
+    - what's the BT level for [Implement binary search algorithm](question_text)
+    - classify [Explain the concept of recursion](question_text)
+    - bloom level for [Compare sorting algorithms](question_text)
+    - analyze [Create a linked list class](question_text)
+
+- intent: map_question_co
+  examples: |
+    - map Q3 to [CO2](co_number)
+    - this question tests [CO4](co_number)
+    - assign to [CO1](co_number)
+    - map to [CO3](co_number)
+    - this belongs to [CO2](co_number)
+
+- intent: upload_marks_intent
+  examples: |
+    - upload marks
+    - enter student marks
+    - how do I upload marks
+    - marks entry
+    - upload student scores
+    - enter exam marks
+    - marks upload process
+
+- intent: explain_attainment
+  examples: |
+    - explain [CO3](co_number) 52% attainment
+    - how is CO attainment calculated
+    - why is [CO1](co_number) Level 2
+    - explain attainment calculation
+    - how did you get this percentage
+    - attainment formula
+
+- intent: ask_po_attainment
+  examples: |
+    - [PO1](po_number) attainment
+    - show PO results
+    - what is [PO3](po_number)
+    - program outcome attainment
+    - [PO2](po_number) percentage
+    - show all PO attainments
+
+- intent: ask_ay_history
+  examples: |
+    - last year data
+    - compare [AY 2023](academic_year)
+    - show 3 year trend
+    - historical data
+    - [2022-23](academic_year) results
+    - previous year attainment
+
+- intent: ask_low_co
+  examples: |
+    - Level 1 COs
+    - which COs failed
+    - show weak outcomes
+    - low performing COs
+    - failed course outcomes
+    - COs below threshold
+
+- intent: out_of_scope
+  examples: |
+    - what's the weather
+    - tell me a joke
+    - how are you
+    - what's your name
+    - play music
+    - book a flight
+    - order food

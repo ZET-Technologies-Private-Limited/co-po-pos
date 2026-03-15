@@ -1,0 +1,114 @@
+version: "3.1"
+
+stories:
+
+- story: greet and start co generation
+  steps:
+  - intent: greet
+  - action: utter_greet
+  - intent: start_co_generation
+  - action: action_start_co_generation
+  - active_loop: co_generation_form
+  - slot_was_set:
+    - requested_slot: course_id
+  - intent: provide_syllabus
+    entities:
+    - course_code: "CS301"
+  - slot_was_set:
+    - course_id: "CS301"
+  - action: co_generation_form
+  - active_loop: null
+  - action: action_parse_syllabus
+
+- story: complete co generation flow
+  steps:
+  - intent: start_co_generation
+  - action: action_start_co_generation
+  - intent: provide_syllabus
+  - action: action_parse_syllabus
+  - intent: confirm_po_pso
+  - action: action_confirm_po_pso
+  - intent: request_co_count
+    entities:
+    - co_count: 5
+  - action: action_generate_cos
+  - intent: approve_cos
+  - action: action_save_cos
+
+- story: edit and regenerate cos
+  steps:
+  - intent: edit_co
+    entities:
+    - co_number: 3
+  - action: action_edit_co
+  - intent: regenerate_single_co
+    entities:
+    - co_number: 2
+  - action: action_regenerate_single_co
+  - intent: approve_cos
+  - action: action_save_cos
+
+- story: exam configuration
+  steps:
+  - intent: setup_exam
+  - action: action_start_exam_config_form
+  - active_loop: exam_config_form
+  - intent: provide_exam_type
+    entities:
+    - exam_type: "T1"
+  - action: exam_config_form
+  - intent: provide_max_marks
+    entities:
+    - max_marks: 50
+  - action: exam_config_form
+  - active_loop: null
+
+- story: question analysis
+  steps:
+  - intent: analyse_question
+    entities:
+    - question_text: "Design a hash function"
+  - action: action_analyse_question
+  - intent: map_question_co
+    entities:
+    - co_number: 2
+  - action: action_override_question_co
+
+- story: attainment explanation
+  steps:
+  - intent: explain_attainment
+    entities:
+    - co_number: 3
+  - action: action_explain_attainment
+  - intent: ask_po_attainment
+    entities:
+    - po_number: "PO1"
+  - action: action_get_po_attainment
+
+- story: marks upload guidance
+  steps:
+  - intent: upload_marks_intent
+  - action: action_guide_marks_upload
+  - intent: affirm
+  - action: utter_greet
+
+- story: historical data query
+  steps:
+  - intent: ask_ay_history
+    entities:
+    - academic_year: "2023-24"
+  - action: action_get_ay_history
+  - intent: ask_low_co
+  - action: action_list_low_cos
+
+- story: fallback flow
+  steps:
+  - intent: out_of_scope
+  - action: utter_out_of_scope
+  - intent: greet
+  - action: utter_greet
+
+- story: goodbye flow
+  steps:
+  - intent: goodbye
+  - action: utter_goodbye

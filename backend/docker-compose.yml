@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: co_po_pso_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: server
+      POSTGRES_DB: co_po_pso_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: co_po_pso_backend
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "True"
+      DATABASE_URL: postgresql://postgres:server@postgres:5432/co_po_pso_db
+      SECRET_KEY: 7f9c1a4d2b8e6f0c3a5d9e1b4c7f2a6d8e3b0c5f1a9d7e4c6b2f8a3d0e5c1b9f6a2d4e7c8f1b3a0d5e6c9f2a7b4d8c1
+      OPENAI_API_KEY: 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
+      PINECONE_API_KEY: pcsk_6KLR4G_CjB1ProLeg6mym9kWMTrRHUhkC4n3Lr4E21PjaqLPTLovXJq2RGxatt2dEsf7KP
+      PINECONE_ENVIRONMENT: us-west1-gcp-free
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./logs:/app/logs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: co_po_pso_network
