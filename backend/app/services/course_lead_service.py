@@ -31,7 +31,8 @@ from app.core.database.models import (
     User, Course, CourseOutcome, Exam, COAttainment, POAttainment,
     ProgramOutcome, ProgramSpecificOutcome, ApprovalQueue, RemedialAction,
     POTarget, PSOTarget, Department, StudentMarks, ExamQuestion,
-    co_po_mapping_table, co_pso_mapping_table
+    co_po_mapping_table, co_pso_mapping_table, question_co_mapping_table,
+    PSO_Attainment, Report
 )
 from app.core.logging.system_logger import SystemLogger
 
@@ -93,7 +94,7 @@ class CourseLeadService:
 
     async def _get_approval_queue(self, course_ids: List[str], now: datetime) -> List[Dict[str, Any]]:
         """Calculate approval queue with real wait time and urgency logic"""
-        # For now, simulate approval queue from marks locks in Redis
+        # Build approval queue from live marks lock submissions in Redis
         from app.core.infrastructure.redis_client import get_json
         
         queue_items = []
@@ -222,6 +223,8 @@ class CourseLeadService:
 
     async def _get_po_summary(self, department: str, academic_year: str) -> List[Dict[str, Any]]:
         """Get PO summary with target tracking"""
+        from app.modules.attainment_engine.services.attainment_service import _level_thresholds_live
+
         # Get PO attainments for department courses
         courses_result = await self.session.execute(
             select(Course.id).where(Course.department == department)
@@ -243,17 +246,25 @@ class CourseLeadService:
             .order_by(ProgramOutcome.code)
         )
         
+        level3_threshold, level2_threshold = await _level_thresholds_live()
         po_summary = []
         for row in result.all():
             attainment_pct = float(row.avg_attainment or 0)
-            target_pct = 70.0  # Default target
+            target_pct = float(level3_threshold)
             target_met = attainment_pct >= target_pct
+
+            if attainment_pct >= level3_threshold:
+                level = "Level 3"
+            elif attainment_pct >= level2_threshold:
+                level = "Level 2"
+            else:
+                level = "Level 1"
             
             po_summary.append({
                 "code": row.code,
                 "attainment_pct": round(attainment_pct, 1),
                 "target_pct": target_pct,
-                "level": self._get_level_from_percentage(attainment_pct),
+                "level": level,
                 "target_met": "Met" if target_met else "Not Met",
                 "status_color": "green" if target_met else "red"
             })
@@ -262,6 +273,8 @@ class CourseLeadService:
 
     async def _get_pso_summary(self, department: str, academic_year: str) -> str:
         """Get PSO summary as formatted string"""
+        from app.modules.attainment_engine.services.attainment_service import _level_thresholds_live
+
         # Get PSO attainments for department courses
         courses_result = await self.session.execute(
             select(Course.id).where(Course.department == department)
@@ -270,41 +283,68 @@ class CourseLeadService:
         
         if not course_ids:
             return "No PSO data available"
-        
-        # For now, return simulated PSO data
-        return "PSO1: 68.4% (Level 2 — Partial) | PSO2: 72.1% (Level 3 — Met)"
+
+        pso_result = await self.session.execute(
+            select(
+                ProgramSpecificOutcome.code,
+                func.avg(PSO_Attainment.attainment_percentage).label("avg_attainment")
+            )
+            .join(PSO_Attainment, ProgramSpecificOutcome.id == PSO_Attainment.pso_id)
+            .where(PSO_Attainment.course_id.in_(course_ids))
+            .group_by(ProgramSpecificOutcome.code)
+            .order_by(ProgramSpecificOutcome.code)
+        )
+
+        rows = pso_result.all()
+        if not rows:
+            return "No PSO attainment records available"
+
+        level3_threshold, level2_threshold = await _level_thresholds_live()
+        segments: List[str] = []
+        for row in rows:
+            pct = round(float(row.avg_attainment or 0.0), 1)
+            if pct >= level3_threshold:
+                level = "Level 3"
+                status = "Met"
+            elif pct >= level2_threshold:
+                level = "Level 2"
+                status = "Partial"
+            else:
+                level = "Level 1"
+                status = "Not Met"
+            segments.append(f"{row.code}: {pct}% ({level} - {status})")
+
+        return " | ".join(segments)
 
     async def _get_recent_actions(self, department: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent actions affecting department courses"""
         # Get courses in department
         courses_result = await self.session.execute(
-            select(Course.id, Course.course_code, Course.created_by).where(Course.department == department)
+            select(Course.id).where(Course.department == department)
         )
-        course_data = {row[0]: {"code": row[1], "faculty_id": row[2]} for row in courses_result.all()}
-        
-        if not course_data:
+        course_ids = [row[0] for row in courses_result.all()]
+
+        if not course_ids:
             return []
-        
-        # Get recent CO creations
+
+        # Get recent CO creations with faculty and course context
         co_result = await self.session.execute(
             select(
-                CourseOutcome.course_id,
                 CourseOutcome.code,
                 CourseOutcome.created_at,
-                User.full_name
+                Course.course_code,
+                User.full_name,
             )
-            .join(User, CourseOutcome.course_id.in_(course_data.keys()))
             .join(Course, CourseOutcome.course_id == Course.id)
             .join(User, Course.created_by == User.id)
-            .where(CourseOutcome.course_id.in_(list(course_data.keys())))
+            .where(CourseOutcome.course_id.in_(course_ids))
             .order_by(desc(CourseOutcome.created_at))
             .limit(limit)
         )
-        
+
         actions = []
         for idx, row in enumerate(co_result.all(), 1):
-            course_code = course_data[row.course_id]["code"]
-            action_text = f"Added {row.code} for {course_code} by {row.full_name}"
+            action_text = f"Added {row.code} for {row.course_code} by {row.full_name}"
             actions.append({
                 "index": idx,
                 "action": action_text,
@@ -315,23 +355,19 @@ class CourseLeadService:
 
     async def _count_overdue_remedials(self, course_ids: List[str], now: datetime) -> int:
         """Count overdue remedial actions"""
-        # For now, simulate based on Level 1 COs
-        level1_count = 0
-        for course_id in course_ids:
-            co_result = await self.session.execute(
-                select(func.count(COAttainment.id))
-                .join(CourseOutcome, COAttainment.course_outcome_id == CourseOutcome.id)
-                .where(
-                    and_(
-                        CourseOutcome.course_id == course_id,
-                        COAttainment.attainment_percentage < 60
-                    )
+        if not course_ids:
+            return 0
+
+        result = await self.session.execute(
+            select(func.count(RemedialAction.id)).where(
+                and_(
+                    RemedialAction.course_id.in_(course_ids),
+                    RemedialAction.due_date < now,
+                    RemedialAction.status.in_(["pending", "in_progress", "overdue"]),
                 )
             )
-            level1_count += co_result.scalar() or 0
-        
-        # Assume 30% of Level 1 COs are overdue for remedial action
-        return int(level1_count * 0.3)
+        )
+        return int(result.scalar() or 0)
 
     async def approve_submission(self, approval_id: str, reviewer_id: str, comments: Optional[str] = None) -> Dict[str, Any]:
         """Approve a submission with real workflow logic"""
@@ -597,8 +633,7 @@ class CourseLeadService:
         
         comparisons = []
         for row in previous_result.all():
-            # This would need current exam projection - simplified for now
-            comparisons.append(f"{row.code} avg last exam: {row.attainment_percentage:.0f}% | Projected this exam: TBD — Analysis pending")
+            comparisons.append(f"{row.code} avg last exam: {row.attainment_percentage:.0f}%")
         
         return {
             "comparisons": comparisons[:5]  # Show top 5
@@ -608,8 +643,7 @@ class CourseLeadService:
         """Get previous submissions for this exam"""
         from app.core.infrastructure.redis_client import get_json
         
-        # In a real implementation, this would query a submissions history table
-        # For now, return current submission info
+        # Return submission lifecycle from current lock metadata
         lock_data = await get_json(f"marks_lock:{exam_id}")
         
         if lock_data:
@@ -765,40 +799,88 @@ class CourseLeadService:
         
         course_rows = []
         for course in courses:
-            # Get CO data for this course
             co_result = await self.session.execute(
                 select(
                     CourseOutcome.code,
                     CourseOutcome.statement,
                     COAttainment.attainment_percentage,
-                    COAttainment.attainment_level
+                    COAttainment.attainment_level,
+                    COAttainment.calculated_at,
+                    Exam.exam_type,
                 )
                 .outerjoin(COAttainment, CourseOutcome.id == COAttainment.course_outcome_id)
+                .outerjoin(Exam, COAttainment.exam_id == Exam.id)
                 .where(CourseOutcome.course_id == course.id)
-                .order_by(CourseOutcome.code)
+                .order_by(CourseOutcome.code, COAttainment.calculated_at.desc())
             )
-            
+
+            by_co: Dict[str, Dict[str, Any]] = {}
+            for row in co_result.all():
+                code = row.code
+                if code not in by_co:
+                    by_co[code] = {
+                        "statement": row.statement,
+                        "latest_pct": 0.0,
+                        "latest_level": "Level 1",
+                        "has_latest": False,
+                        "cie_vals": [],
+                        "see_vals": [],
+                    }
+
+                if row.attainment_percentage is not None:
+                    if not by_co[code]["has_latest"]:
+                        by_co[code]["latest_pct"] = float(row.attainment_percentage or 0.0)
+                        by_co[code]["latest_level"] = row.attainment_level or "Level 1"
+                        by_co[code]["has_latest"] = True
+
+                    exam_type_raw = row.exam_type.value if hasattr(row.exam_type, "value") else row.exam_type
+                    exam_type = str(exam_type_raw or "").lower()
+                    pct = float(row.attainment_percentage or 0.0)
+                    if exam_type == "end_term":
+                        by_co[code]["see_vals"].append(pct)
+                    elif exam_type in {"mid_term", "assignment", "practical"}:
+                        by_co[code]["cie_vals"].append(pct)
+
             cos_data = []
             level1_count = 0
-            pending_approval = False
-            
-            for co_row in co_result.all():
-                percentage = float(co_row.attainment_percentage or 0)
-                level = co_row.attainment_level or "Level 1"
-                
+
+            for co_code in sorted(by_co.keys()):
+                row = by_co[co_code]
+                percentage = float(row["latest_pct"])
+                level = row["latest_level"] or "Level 1"
                 if "Level 1" in level:
                     level1_count += 1
-                
+
+                cie_vals = row["cie_vals"]
+                see_vals = row["see_vals"]
+                cie_pct = round(sum(cie_vals) / len(cie_vals), 1) if cie_vals else None
+                see_pct = round(sum(see_vals) / len(see_vals), 1) if see_vals else None
+
                 cos_data.append({
-                    "co_code": co_row.code,
-                    "statement": co_row.statement,
-                    "cie_percentage": percentage * 0.4,  # Simulated CIE component
-                    "see_percentage": percentage * 0.6,  # Simulated SEE component
+                    "co_code": co_code,
+                    "statement": row["statement"],
+                    "cie_percentage": cie_pct,
+                    "see_percentage": see_pct,
                     "final_percentage": percentage,
                     "level": level,
                     "remedial_status": "Required" if "Level 1" in level else "Not Required",
                     "can_override": True
                 })
+
+            latest_approval = await self.session.execute(
+                select(ApprovalQueue.status)
+                .where(
+                    and_(
+                        ApprovalQueue.course_id == course.id,
+                        ApprovalQueue.submission_type == "marks",
+                    )
+                )
+                .order_by(ApprovalQueue.submitted_at.desc())
+                .limit(1)
+            )
+            latest_status = latest_approval.scalar_one_or_none()
+            marks_status = (str(latest_status).replace("_", " ").title() if latest_status else "Not Submitted")
+            pending_approval = str(latest_status or "").lower() == "pending"
             
             # Apply status filter
             if status_filter == "level1" and level1_count == 0:
@@ -826,7 +908,7 @@ class CourseLeadService:
                 "faculty": faculty_name,
                 "cos_generated": len(cos_data),
                 "overall_avg_level": overall_level,
-                "marks_status": "Approved",  # Simplified
+                "marks_status": marks_status,
                 "cos_data": cos_data,
                 "expanded": False  # UI state
             })
@@ -1004,6 +1086,8 @@ class CourseLeadService:
 
     async def get_po_pso_attainment_data(self, department: str, academic_year: str) -> Dict[str, Any]:
         """Get PO & PSO attainment data with gap analysis and CO contributions"""
+        from app.modules.attainment_engine.services.attainment_service import _level_thresholds_live
+
         # Get department courses
         courses_result = await self.session.execute(
             select(Course.id).where(Course.department == department)
@@ -1030,12 +1114,13 @@ class CourseLeadService:
         )
         
         po_table = []
-        target_percentage = 60.0  # Standard target
+        level3_threshold, level2_threshold = await _level_thresholds_live()
+        target_percentage = float(level3_threshold)
         
         for row in po_result.all():
             weighted_att = float(row.weighted_attainment or 0)
             gap = target_percentage - weighted_att
-            level = "Level 3" if weighted_att >= 70 else "Level 2" if weighted_att >= 60 else "Level 1"
+            level = "Level 3" if weighted_att >= level3_threshold else "Level 2" if weighted_att >= level2_threshold else "Level 1"
             
             # Get CO contributions for this PO
             co_contributions = await self._get_co_contributions_for_po(row.id, course_ids)
@@ -1059,7 +1144,7 @@ class CourseLeadService:
             "labels": [po["po_code"] for po in po_table],
             "attainments": [po["weighted_attainment"] for po in po_table],
             "threshold": target_percentage,
-            "colors": ["green" if att >= target_percentage else "amber" if att >= 50 else "red" 
+            "colors": ["green" if att >= target_percentage else "amber" if att >= level2_threshold else "red" 
                       for att in [po["weighted_attainment"] for po in po_table]]
         }
         
@@ -1082,7 +1167,7 @@ class CourseLeadService:
         for row in pso_result.all():
             weighted_att = float(row.weighted_attainment or 0)
             gap = target_percentage - weighted_att
-            level = "Level 3" if weighted_att >= 70 else "Level 2" if weighted_att >= 60 else "Level 1"
+            level = "Level 3" if weighted_att >= level3_threshold else "Level 2" if weighted_att >= level2_threshold else "Level 1"
             
             pso_table.append({
                 "pso_id": row.id,
@@ -1270,14 +1355,45 @@ class CourseLeadService:
             cell = ws.cell(row=3, column=col, value=header)
             cell.font = Font(bold=True)
             cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
-        
-        # This would need actual CO-PO mapping data - simplified for now
-        sample_cos = ["CO1", "CO2", "CO3", "CO4", "CO5"]
-        for row, co in enumerate(sample_cos, 4):
-            ws.cell(row=row, column=1, value=co)
-            for col in range(2, len(headers) + 1):
-                # NBA uses 1,2,3 for weak, medium, strong correlation
-                ws.cell(row=row, column=col, value="2")  # Sample medium correlation
+
+        courses_result = await self.session.execute(
+            select(Course.id, Course.course_code).where(Course.department == department)
+        )
+        courses = courses_result.all()
+        course_ids = [row.id for row in courses]
+
+        co_rows_result = await self.session.execute(
+            select(CourseOutcome.id, CourseOutcome.code, Course.course_code)
+            .join(Course, CourseOutcome.course_id == Course.id)
+            .where(Course.department == department)
+            .order_by(Course.course_code, CourseOutcome.code)
+        )
+        co_rows = co_rows_result.all()
+
+        mapping_lookup: Dict[Tuple[str, str], int] = {}
+        if course_ids:
+            mapping_result = await self.session.execute(
+                select(
+                    CourseOutcome.id,
+                    ProgramOutcome.code,
+                    co_po_mapping_table.c.similarity_score,
+                )
+                .join(co_po_mapping_table, CourseOutcome.id == co_po_mapping_table.c.course_outcome_id)
+                .join(ProgramOutcome, ProgramOutcome.id == co_po_mapping_table.c.program_outcome_id)
+                .join(Course, CourseOutcome.course_id == Course.id)
+                .where(Course.id.in_(course_ids))
+            )
+            for row in mapping_result.all():
+                level = int(round(float(row.similarity_score or 0) * 3))
+                mapping_lookup[(row.id, row.code)] = max(0, min(3, level))
+
+        if not co_rows:
+            ws.cell(row=4, column=1, value="No mapped COs found for department")
+        else:
+            for row_idx, co in enumerate(co_rows, 4):
+                ws.cell(row=row_idx, column=1, value=f"{co.course_code}-{co.code}")
+                for col_idx, po_code in enumerate(headers[1:], 2):
+                    ws.cell(row=row_idx, column=col_idx, value=mapping_lookup.get((co.id, po_code), 0))
         
         buffer = io.BytesIO()
         wb.save(buffer)
@@ -1298,77 +1414,101 @@ class CourseLeadService:
         
         if not course:
             raise ValueError(f"Course {course_id} not found")
-        
-        # L5-02: Comparison table for 3 academic years
-        academic_years = ["2022-23", "2023-24", "2024-25"]
-        
-        # Get CO data for all years (simulated - in real implementation would query historical data)
+
+        def to_ay_label(ts: datetime) -> str:
+            start_year = ts.year if ts.month >= 7 else ts.year - 1
+            return f"{start_year}-{(start_year + 1) % 100:02d}"
+
         co_result = await self.session.execute(
-            select(
-                CourseOutcome.code,
-                CourseOutcome.statement
-            )
+            select(CourseOutcome.id, CourseOutcome.code, CourseOutcome.statement)
             .where(CourseOutcome.course_id == course_id)
             .order_by(CourseOutcome.code)
         )
-        
-        comparison_rows = []
-        for co_row in co_result.all():
-            # Simulate historical data - in real implementation, query historical attainment records
-            ay_2022_23 = 65.0 + (hash(co_row.code) % 20)  # Simulated
-            ay_2023_24 = 68.0 + (hash(co_row.code) % 15)  # Simulated
-            ay_2024_25 = 72.0 + (hash(co_row.code) % 10)  # Simulated
-            
-            # L5-03: Trend calculation
-            trend_2023 = ay_2023_24 - ay_2022_23
-            trend_2024 = ay_2024_25 - ay_2023_24
-            overall_trend = ay_2024_25 - ay_2022_23
-            
+        co_rows = co_result.all()
+
+        att_result = await self.session.execute(
+            select(
+                CourseOutcome.code,
+                COAttainment.attainment_percentage,
+                COAttainment.calculated_at,
+            )
+            .join(COAttainment, CourseOutcome.id == COAttainment.course_outcome_id)
+            .where(CourseOutcome.course_id == course_id)
+            .order_by(CourseOutcome.code, COAttainment.calculated_at.asc())
+        )
+
+        by_co_year: Dict[str, Dict[str, List[float]]] = {}
+        all_years: set[str] = set()
+        for row in att_result.all():
+            if row.calculated_at is None or row.attainment_percentage is None:
+                continue
+            ay_label = to_ay_label(row.calculated_at)
+            all_years.add(ay_label)
+            by_co_year.setdefault(row.code, {}).setdefault(ay_label, []).append(float(row.attainment_percentage or 0.0))
+
+        ordered_years = sorted(all_years, key=lambda y: int(y.split("-")[0]))
+        academic_years = ordered_years[-3:] if len(ordered_years) > 3 else ordered_years
+
+        comparison_rows: List[Dict[str, Any]] = []
+        comparison_compact: List[Dict[str, Any]] = []
+        for co_row in co_rows:
+            yearly_vals: Dict[str, float] = {}
+            for ay in academic_years:
+                vals = by_co_year.get(co_row.code, {}).get(ay, [])
+                yearly_vals[ay] = round(sum(vals) / len(vals), 1) if vals else 0.0
+
+            first_val = yearly_vals[academic_years[0]] if academic_years else 0.0
+            last_val = yearly_vals[academic_years[-1]] if academic_years else 0.0
+            overall_trend = last_val - first_val
             trend_direction = "up" if overall_trend > 2 else "down" if overall_trend < -2 else "flat"
             trend_percentage = abs(overall_trend)
-            
-            # L5-04: Persistent low highlight
-            persistent_low = ay_2022_23 < 65 and ay_2023_24 < 65
-            
+
+            persistent_low = False
+            if len(academic_years) >= 2:
+                persistent_low = all(yearly_vals.get(ay, 0.0) < 65.0 for ay in academic_years[:2])
+
             comparison_rows.append({
                 "co_code": co_row.code,
                 "co_statement": co_row.statement,
-                "ay_2022_23": round(ay_2022_23, 1),
-                "ay_2023_24": round(ay_2023_24, 1),
-                "ay_2024_25": round(ay_2024_25, 1),
+                "yearly": yearly_vals,
                 "trend_direction": trend_direction,
                 "trend_percentage": round(trend_percentage, 1),
                 "persistent_low": persistent_low,
-                "row_color": "amber" if persistent_low else "normal"
+                "row_color": "amber" if persistent_low else "normal",
             })
-        
-        # L5-05: Trend chart data
+
+            compact_row: Dict[str, Any] = {"co": co_row.code}
+            for ay in academic_years:
+                compact_row[ay] = yearly_vals.get(ay, 0.0)
+            comparison_compact.append(compact_row)
+
         chart_data = {
             "labels": academic_years,
-            "datasets": []
+            "datasets": [
+                {
+                    "label": row["co_code"],
+                    "data": [row["yearly"].get(ay, 0.0) for ay in academic_years],
+                    "borderColor": self._get_trend_color(row["trend_direction"]),
+                    "backgroundColor": self._get_trend_color(row["trend_direction"], alpha=0.2),
+                }
+                for row in comparison_rows
+            ],
         }
-        
-        for row in comparison_rows:
-            chart_data["datasets"].append({
-                "label": row["co_code"],
-                "data": [row["ay_2022_23"], row["ay_2023_24"], row["ay_2024_25"]],
-                "borderColor": self._get_trend_color(row["trend_direction"]),
-                "backgroundColor": self._get_trend_color(row["trend_direction"], alpha=0.2)
-            })
-        
+
         return {
             "course_id": course_id,
             "course_code": course.course_code,
             "course_name": course.course_name,
             "academic_years": academic_years,
             "comparison_table": comparison_rows,
+            "comparison": comparison_compact,
             "chart_data": chart_data,
             "summary": {
                 "total_cos": len(comparison_rows),
                 "improving_cos": len([r for r in comparison_rows if r["trend_direction"] == "up"]),
                 "declining_cos": len([r for r in comparison_rows if r["trend_direction"] == "down"]),
-                "persistent_low_cos": len([r for r in comparison_rows if r["persistent_low"]])
-            }
+                "persistent_low_cos": len([r for r in comparison_rows if r["persistent_low"]]),
+            },
         }
     
     def _get_trend_color(self, direction: str, alpha: float = 1.0) -> str:
@@ -1446,12 +1586,16 @@ class CourseLeadService:
             for row in courses_result.all()
         ]
         
-        exam_options = [
-            {"value": "T1", "label": "Test 1"},
-            {"value": "T2", "label": "Test 2"},
-            {"value": "T3", "label": "Test 3"},
-            {"value": "SEE", "label": "Semester End Exam"}
-        ]
+        exam_query = (
+            select(Exam.id, Exam.exam_name)
+            .join(Course, Exam.course_id == Course.id)
+            .where(Course.department == department)
+        )
+        if course_filter:
+            exam_query = exam_query.where(Exam.course_id == course_filter)
+        exam_query = exam_query.order_by(Exam.created_at.desc())
+        exam_rows = (await self.session.execute(exam_query)).all()
+        exam_options = [{"value": row.id, "label": row.exam_name} for row in exam_rows]
         
         # Get recent reports for preview
         recent_reports = await self._get_recent_reports_preview(department, report_type, course_filter, exam_filter)

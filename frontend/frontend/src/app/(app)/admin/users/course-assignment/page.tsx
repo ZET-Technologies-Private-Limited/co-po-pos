@@ -67,7 +67,16 @@ export default function CourseAssignmentPage() {
   }
 
   function copyFromPreviousAY() {
-    addToast("Assignment matrix pre-filled from AY-1 snapshot.", "info");
+    // Pre-fill matrix from current DB state (created_by already reflects AY-1 assignments)
+    const base: Record<string, Record<string, boolean>> = {};
+    faculties.forEach((f: any) => {
+      base[f.id] = {};
+      courses.forEach((c: any) => {
+        base[f.id][c.id] = (c.created_by || c.facultyId) === f.id;
+      });
+    });
+    setMatrix(base);
+    addToast("Matrix pre-filled from current course assignments.", "info");
   }
 
   if (loading) return (<AccessGate feature="user_management" deny="lock"><div className="max-w-7xl mx-auto pb-24 py-8"><p className="text-white/60">Loading...</p></div></AccessGate>);
@@ -120,37 +129,19 @@ export default function CourseAssignmentPage() {
             <thead>
               <tr className="border-b border-white/10">
                 <th className="px-3 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Course</th>
-                <th className="px-3 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Lead Assignment</th>
-                <th className="px-3 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Section</th>
+                <th className="px-3 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Department</th>
+                <th className="px-3 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Assigned Faculty</th>
               </tr>
             </thead>
             <tbody>
-              {courses.map((course) => {
-                const leadOptions = users.filter(
-                  (u) => u.roles.includes("subject_lead") && u.dept === course.dept && u.status === "active"
-                );
+              {courses.map((course: any) => {
+                const assignedFaculty = faculties.filter((f: any) => Boolean(matrix[f.id]?.[course.id]));
                 return (
                   <tr key={course.id} className="border-b border-white/5">
-                    <td className="px-3 py-2 text-xs text-white">{course.code} - {course.name}</td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={course.leadId || ""}
-                        onChange={(e) => updateCourse(course.id, { leadId: e.target.value || undefined })}
-                        className="bg-white/[0.02] border border-white/10 px-2 py-1.5 text-xs text-white"
-                      >
-                        <option value="">Select lead</option>
-                        {leadOptions.map((lead) => (
-                          <option key={lead.id} value={lead.id} className="bg-[#0a0a0f]">{lead.name}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        value={course.section || ""}
-                        onChange={(e) => updateCourse(course.id, { section: e.target.value })}
-                        placeholder="A/B/C"
-                        className="bg-white/[0.02] border border-white/10 px-2 py-1.5 text-xs text-white w-24"
-                      />
+                    <td className="px-3 py-2 text-xs text-white">{course.course_code ?? course.code} — {course.course_name ?? course.name}</td>
+                    <td className="px-3 py-2 text-xs text-white/60">{course.department ?? course.dept ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-white/60">
+                      {assignedFaculty.length === 0 ? <span className="text-alert">Unassigned</span> : assignedFaculty.map((f: any) => f.full_name ?? f.name).join(", ")}
                     </td>
                   </tr>
                 );

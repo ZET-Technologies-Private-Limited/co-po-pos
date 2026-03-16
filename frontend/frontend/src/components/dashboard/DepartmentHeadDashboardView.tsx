@@ -19,12 +19,9 @@ import apiClient from "@/lib/apiClient";
 import { staggerContainer, fadeSlideUp } from "@/lib/animations";
 import { DataTable } from "@/components/ui/DataTable";
 
-const DEFAULT_LEVEL2 = 55;
-const DEFAULT_LEVEL3 = 70;
-
 export function DepartmentHeadDashboardView() {
   const { user, activeAY } = useAuthStore();
-  const dept = user?.department || "CSE";
+  const dept = String(user?.department || "").trim();
   const reportDate = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -36,24 +33,47 @@ export function DepartmentHeadDashboardView() {
   const [ayConfig, setAyConfig] = useState<{ code?: string; is_locked?: boolean; status?: string }>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [thresholds, setThresholds] = useState<{ level2: number; level3: number }>({ level2: 50, level3: 60 });
 
   const load = useCallback(async () => {
+    if (!dept) {
+      setDashboard(null);
+      setCourses([]);
+      setAyConfig({});
+      setError("No department is mapped to this user.");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const [dashRes, coursesRes, currentAY, ayList] = await Promise.all([
-        apiClient.getCourseLeadDashboard(dept, activeAY || "2024-25"),
-        apiClient.getCourses(),
-        apiClient.getCurrentAcademicYear().catch(() => ({ code: activeAY || "2024-25" })),
+      const [currentAY, ayList, thresholdRes] = await Promise.all([
+        apiClient.getCurrentAcademicYear().catch(() => ({})),
         apiClient.getAcademicYears().catch(() => ({ items: [] })),
+        apiClient.getThresholds().catch(() => ({ level2: 0.5, level3: 0.6 })),
       ]);
+
+      const ayItems = ayList?.items ?? [];
+      const resolvedAY = activeAY || currentAY?.code || ayItems.find((a: any) => a.is_active)?.code;
+      if (!resolvedAY) {
+        throw new Error("No active academic year configured.");
+      }
+
+      const [dashRes, coursesRes] = await Promise.all([
+        apiClient.getCourseLeadDashboard(dept, resolvedAY),
+        apiClient.getCourses(),
+      ]);
+
       setDashboard(dashRes);
       const list = Array.isArray(coursesRes) ? coursesRes : (coursesRes?.items ?? []);
       setCourses(list);
-      const code = currentAY?.code ?? activeAY;
-      const items = ayList?.items ?? [];
-      const current = items.find((a: any) => a.code === code || a.is_active) ?? { code: code || "2024-25", is_locked: false };
+      const current = ayItems.find((a: any) => a.code === resolvedAY || a.is_active) ?? { code: resolvedAY, is_locked: false };
       setAyConfig({ ...current, status: current.is_locked ? "locked" : "active" });
+      setThresholds({
+        level2: Math.round(Number(thresholdRes?.level2 ?? 0.5) * 100),
+        level3: Math.round(Number(thresholdRes?.level3 ?? 0.6) * 100),
+      });
     } catch (e: any) {
       setError(e?.message || "Failed to load HOD dashboard.");
     } finally {
@@ -96,6 +116,8 @@ export function DepartmentHeadDashboardView() {
     (s: number, row: any) => s + (row.cos?.length ?? 0),
     0
   );
+  const level2Threshold = thresholds.level2;
+  const level3Threshold = thresholds.level3;
 
   const poAttainment = useMemo(() => {
     const rows = dashboard?.po_summary ?? [];
@@ -106,7 +128,47 @@ export function DepartmentHeadDashboardView() {
     return out;
   }, [dashboard]);
 
-  const facultyProgress = useMemo(() => [], []);
+  const facultyProgress = useMemo(() => {
+    const rows: Record<string, { name: string; submitted: number; approved: number; pending: number; courseSet: Set<string> }> = {};
+    const ensure = (name: string) => {
+      if (!rows[name]) {
+        rows[name] = { name, submitted: 0, approved: 0, pending: 0, courseSet: new Set<string>() };
+      }
+      return rows[name];
+    };
+
+    const queue = Array.isArray(dashboard?.approval_queue) ? dashboard.approval_queue : [];
+    queue.forEach((item: any) => {
+      const name = String(item?.faculty || "Unknown");
+      const row = ensure(name);
+      row.submitted += 1;
+      const status = String(item?.status || "pending").toLowerCase();
+      if (status === "approved") row.approved += 1;
+      if (status === "pending") row.pending += 1;
+      if (item?.course) row.courseSet.add(String(item.course));
+    });
+
+    const actions = Array.isArray(dashboard?.recent_actions) ? dashboard.recent_actions : [];
+    actions.forEach((action: any) => {
+      const text = String(action?.action || "");
+      const byMatch = text.match(/ by (.+)$/i);
+      if (!byMatch) return;
+      const name = byMatch[1].trim();
+      const row = ensure(name || "Unknown");
+      const courseMatch = text.match(/ for ([A-Za-z0-9-]+)/i);
+      if (courseMatch?.[1]) row.courseSet.add(courseMatch[1]);
+    });
+
+    return Object.values(rows)
+      .map((r) => ({
+        name: r.name,
+        courses: r.courseSet.size,
+        submitted: r.submitted,
+        approved: r.approved,
+        pending: r.pending,
+      }))
+      .sort((a, b) => b.pending - a.pending || b.submitted - a.submitted);
+  }, [dashboard]);
 
   const heatMapData = useMemo(() => {
     const table = dashboard?.co_health_table ?? [];
@@ -150,7 +212,7 @@ export function DepartmentHeadDashboardView() {
       variants={staggerContainer}
       initial="hidden"
       animate="visible"
-      className="flex flex-col gap-16 pb-32"
+      className="w-full flex flex-col gap-16 pb-32"
     >
       {/* ── HEADER ── */}
       <motion.section variants={fadeSlideUp} className="flex flex-col gap-4">
@@ -171,7 +233,7 @@ export function DepartmentHeadDashboardView() {
                 AY {ayLabel}
               </p>
               <p className="text-[10px] font-mono text-white/20 uppercase tracking-[0.2em]">
-                Status: {ay.status}
+                Status: {ayConfig.status}
               </p>
             </div>
           </div>
@@ -194,36 +256,33 @@ export function DepartmentHeadDashboardView() {
         variants={fadeSlideUp}
         className="flex flex-col gap-12"
       >
-        <div className="flex justify-between items-start gap-12">
-          <div className="flex-1 space-y-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 border border-white/5">
+          <div className="space-y-2 p-8 border-r border-white/5">
             <span className="text-[9px] font-mono text-white/20 uppercase tracking-[0.3em]">Total Courses</span>
             <p className="text-4xl font-display text-white">{totalCourses}</p>
             <p className="text-[10px] text-white/30 font-mono tracking-tight">{totalCOs} outcomes mapped</p>
           </div>
-          <div className="w-[1px] h-16 bg-white/5" />
-          <div className="flex-1 space-y-2">
+          <div className="space-y-2 p-8 border-r border-white/5">
             <span className="text-[9px] font-mono text-white/20 uppercase tracking-[0.3em]">Approval Progress</span>
             <p className="text-4xl font-display text-attain">{approvedSubs}</p>
             <p className="text-[10px] text-white/30 font-mono tracking-tight">{pendingSubs} current queue</p>
           </div>
-          <div className="w-[1px] h-16 bg-white/5" />
-          <div className="flex-1 space-y-2">
+          <div className="space-y-2 p-8 border-r border-white/5">
             <span className="text-[9px] font-mono text-white/20 uppercase tracking-[0.3em]">Critical Risks (L1)</span>
             <p className="text-4xl font-display text-alert">{level1COs}</p>
-            <p className="text-[10px] text-white/30 font-mono tracking-tight">Below {DEFAULT_LEVEL2}% band</p>
+            <p className="text-[10px] text-white/30 font-mono tracking-tight">Below {level2Threshold}% band</p>
           </div>
-          <div className="w-[1px] h-16 bg-white/5" />
-          <div className="flex-1 space-y-2">
+          <div className="space-y-2 p-8">
             <span className="text-[9px] font-mono text-white/20 uppercase tracking-[0.3em]">Dept Health Index</span>
-            <p className={`text-4xl font-display ${avgDeptCO >= DEFAULT_LEVEL3 ? "text-attain" : "text-brand"}`}>{avgDeptCO}%</p>
-            <p className="text-[10px] text-white/30 font-mono tracking-tight">Target: {DEFAULT_LEVEL3}%</p>
+            <p className={`text-4xl font-display ${avgDeptCO >= level3Threshold ? "text-attain" : "text-brand"}`}>{avgDeptCO}%</p>
+            <p className="text-[10px] text-white/30 font-mono tracking-tight">Target: {level3Threshold}%</p>
           </div>
         </div>
       </motion.section>
 
       <div className="flex flex-col gap-24">
         {/* ── CO HEALTH HEAT MAP (FLATTENED) ── */}
-        <motion.section variants={fadeSlideUp} className="space-y-8">
+        <motion.section variants={fadeSlideUp} className="space-y-8 w-full">
           <div className="flex justify-between items-end border-b border-white/5 pb-6">
             <h2 className="text-xl font-display text-white uppercase tracking-widest flex items-center gap-4">
               <Activity className="w-5 h-5 text-orange-400" /> CO Health heat map
@@ -283,13 +342,13 @@ export function DepartmentHeadDashboardView() {
                 <div key={p.id} className="space-y-4">
                   <div className="flex justify-between items-end">
                     <span className="text-[10px] font-mono text-white/40 uppercase tracking-widest">{p.id} · {p.name}</span>
-                    <span className={`text-lg font-display ${p.value < DEFAULT_LEVEL2 ? "text-alert" : "text-white"}`}>{p.value}%</span>
+                    <span className={`text-lg font-display ${p.value < level2Threshold ? "text-alert" : "text-white"}`}>{p.value}%</span>
                   </div>
                   <div className="h-0.5 bg-white/5 w-full">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${p.value}%` }}
-                      className={`h-full ${p.value < DEFAULT_LEVEL2 ? "bg-alert" : "bg-brand"}`}
+                      className={`h-full ${p.value < level2Threshold ? "bg-alert" : "bg-brand"}`}
                     />
                   </div>
                 </div>
@@ -315,7 +374,7 @@ export function DepartmentHeadDashboardView() {
                   <AlertCircle className="w-6 h-6 text-alert shrink-0 mt-1" />
                   <div className="space-y-3">
                     <p className="text-sm font-bold text-white uppercase">{level1COs} Critical Bottlenecks</p>
-                    <p className="text-xs text-white/40 leading-relaxed font-light">Remedial journals required for all courses hovering below the {DEFAULT_LEVEL2}% attainment threshold.</p>
+                    <p className="text-xs text-white/40 leading-relaxed font-light">Remedial journals required for all courses hovering below the {level2Threshold}% attainment threshold.</p>
                     <Link href="/hod/co-attainment" className="text-[9px] font-mono text-orange-400 hover:text-white uppercase tracking-[0.2em] flex items-center gap-2">
                       Open Audit Logs <ArrowUpRight className="w-3 h-3" />
                     </Link>

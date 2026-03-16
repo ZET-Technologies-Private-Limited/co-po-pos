@@ -1,6 +1,7 @@
 version: "3.1"
 
 nlu:
+# ── General ───────────────────────────────────────────────────────────────────
 - intent: greet
   examples: |
     - hello
@@ -11,6 +12,8 @@ nlu:
     - greetings
     - hi there
     - hello there
+    - start
+    - begin
 
 - intent: goodbye
   examples: |
@@ -21,7 +24,9 @@ nlu:
     - bye bye
     - farewell
     - catch you later
-    - thanks, bye
+    - thanks bye
+    - done for today
+    - exit
 
 - intent: affirm
   examples: |
@@ -35,6 +40,13 @@ nlu:
     - of course
     - definitely
     - absolutely
+    - ok
+    - okay
+    - proceed
+    - go ahead
+    - confirm
+    - looks good
+    - that's fine
 
 - intent: deny
   examples: |
@@ -47,7 +59,36 @@ nlu:
     - that's wrong
     - incorrect
     - disagree
+    - cancel
+    - stop
+    - skip this
 
+- intent: help
+  examples: |
+    - help
+    - what can you do
+    - show me features
+    - capabilities
+    - how to use
+    - what are your features
+    - show commands
+    - guide me
+    - I need help
+    - what do you support
+
+- intent: out_of_scope
+  examples: |
+    - what's the weather
+    - tell me a joke
+    - how are you
+    - what's your name
+    - play music
+    - book a flight
+    - order food
+    - who is the president
+    - what time is it
+
+# ── STEP 1: CO Generation ─────────────────────────────────────────────────────
 - intent: start_co_generation
   examples: |
     - generate course outcomes
@@ -60,6 +101,20 @@ nlu:
     - help me generate course outcomes
     - start CO generation
     - create new course outcomes
+    - generate COs from syllabus
+    - auto generate course outcomes
+    - suggest COs for my subject
+    - I need to create learning outcomes
+    - generate outcomes for [Data Structures](course_name)
+
+- intent: provide_course_info
+  examples: |
+    - course name is [Data Structures and Algorithms](course_name) code [CS301](course_code) credits [4](course_credits)
+    - [CS302](course_code) [Object Oriented Programming](course_name) [3](course_credits) credits
+    - my course is [Digital Electronics](course_name) code [EC201](course_code)
+    - course [ME301](course_code) [Thermodynamics](course_name) [4](course_credits) credits
+    - [Civil Engineering Design](course_name) [CE401](course_code) [3](course_credits)
+    - course code [CS501](course_code) name [Machine Learning](course_name)
 
 - intent: provide_syllabus
   examples: |
@@ -68,6 +123,11 @@ nlu:
     - the syllabus is [Data Structures: Arrays, Trees, Graphs, Sorting Algorithms](syllabus_text)
     - syllabus content: [Programming fundamentals, OOP concepts, Data structures](syllabus_text)
     - here's the course content [Algorithms, Complexity Analysis, Dynamic Programming](syllabus_text)
+    - use existing syllabus
+    - use current syllabus
+    - keep the existing one
+    - I already have a syllabus saved
+    - paste new syllabus
 
 - intent: confirm_po_pso
   examples: |
@@ -76,9 +136,14 @@ nlu:
     - use default POs
     - these POs look good
     - proceed with these program outcomes
-    - yes, use these PSOs
+    - yes use these PSOs
     - confirm PSOs
     - default PSOs are fine
+    - align with NBA POs
+    - yes include PO alignment
+    - skip PO alignment
+    - proceed without POs
+    - no PO mapping needed
 
 - intent: request_co_count
   examples: |
@@ -88,6 +153,8 @@ nlu:
     - make [5](co_count) COs
     - [4](co_count) course outcomes please
     - generate [6](co_count) course outcomes
+    - I need [5](co_count) COs
+    - give me [4](co_count) outcomes
 
 - intent: approve_cos
   examples: |
@@ -97,8 +164,12 @@ nlu:
     - confirm and save
     - these COs are perfect
     - save them
-    - looks great, save
+    - looks great save
     - approve these outcomes
+    - finalise COs
+    - done with COs
+    - save all COs
+    - complete CO generation
 
 - intent: edit_co
   examples: |
@@ -109,6 +180,8 @@ nlu:
     - rephrase [CO2](co_number)
     - update [CO3](co_number)
     - fix [CO1](co_number)
+    - [CO2](co_number) needs to be changed
+    - I want to edit [CO5](co_number)
 
 - intent: regenerate_cos
   examples: |
@@ -119,6 +192,9 @@ nlu:
     - create new ones
     - start over
     - regenerate everything
+    - I don't like these COs
+    - generate fresh COs
+    - redo all outcomes
 
 - intent: regenerate_single_co
   examples: |
@@ -127,6 +203,9 @@ nlu:
     - regenerate just [CO1](co_number)
     - only [CO4](co_number) needs regeneration
     - fix [CO2](co_number) only
+    - rewrite [CO3](co_number)
+    - change only [CO1](co_number)
+    - [CO5](co_number) needs to be redone
 
 - intent: explain_co_bt
   examples: |
@@ -136,16 +215,111 @@ nlu:
     - explain BT level
     - why this bloom taxonomy level
     - what does [L3](bt_level) mean
+    - why is [CO1](co_number) at apply level
+    - explain the cognitive level for [CO4](co_number)
+    - what is the BT level of [CO2](co_number)
+
+- intent: ask_co_format
+  examples: |
+    - what is the CO format
+    - how should a CO be written
+    - show me CO statement format
+    - what is the correct format for course outcomes
+    - CO statement template
+    - how to write a CO
+
+- intent: ask_bloom_verbs
+  examples: |
+    - show bloom verbs
+    - what verbs to use for [L3](bt_level)
+    - bloom taxonomy action verbs
+    - verbs for [apply](bt_level) level
+    - what are the action verbs for [L4](bt_level)
+    - show me BT verbs
+    - list bloom's taxonomy verbs
+
+# ── STEP 2: CO-PO-PSO Mapping ─────────────────────────────────────────────────
+- intent: map_co_po
+  examples: |
+    - map COs to POs
+    - CO PO mapping
+    - create CO-PO matrix
+    - map course outcomes to program outcomes
+    - build mapping matrix
+    - map outcomes to POs
+    - CO to PO alignment
+    - generate CO-PO mapping
+    - map my COs to program outcomes
+
+- intent: map_co_pso
+  examples: |
+    - map COs to PSOs
+    - CO PSO mapping
+    - map to program specific outcomes
+    - CO-PSO matrix
+    - map outcomes to PSOs
+    - align COs with PSOs
+    - generate CO-PSO mapping
+
+- intent: update_mapping_weight
+  examples: |
+    - change [CO1](co_number) [PO3](po_number) weight to [2](mapping_weight)
+    - update mapping [CO2](co_number) [PO1](po_number) to [3](mapping_weight)
+    - set [CO3](co_number) [PO5](po_number) correlation to [1](mapping_weight)
+    - [CO4](co_number) maps to [PO2](po_number) with weight [3](mapping_weight)
+    - change the mapping weight for [CO1](co_number) and [PO4](po_number)
+
+- intent: ask_mapping_density
+  examples: |
+    - what is the mapping density
+    - check matrix density
+    - is my mapping matrix healthy
+    - how dense is the CO-PO matrix
+    - check if mapping is over or under
+    - validate mapping density
+
+- intent: ask_po_definition
+  examples: |
+    - what is [PO1](po_number)
+    - define [PO3](po_number)
+    - show [PO5](po_number) definition
+    - what does [PO2](po_number) mean
+    - explain [PO7](po_number)
+    - show all 12 POs
+    - list all program outcomes
+    - what are the NBA POs
+
+- intent: confirm_mapping_matrix
+  examples: |
+    - mapping looks good
+    - confirm the matrix
+    - save the mapping
+    - approve CO-PO matrix
+    - matrix is correct
+    - finalise mapping
+
+# ── STEP 3: Exam Configuration ────────────────────────────────────────────────
+- intent: configure_exam
+  examples: |
+    - configure exam
+    - setup exam
+    - create new exam
+    - add exam
+    - I want to configure an exam
+    - exam setup
+    - set up a test
+    - configure assessment
 
 - intent: setup_exam
   examples: |
     - configure [T1](exam_type)
     - setup [Unit Test 2](exam_type)
     - add question paper
-    - create new exam
     - configure [SEE](exam_type)
     - setup [Assignment](exam_type)
     - add [T3](exam_type) exam
+    - create [T2](exam_type) test
+    - setup end semester exam
 
 - intent: provide_exam_type
   examples: |
@@ -156,6 +330,9 @@ nlu:
     - [Assignment](exam_type)
     - [Practical](exam_type)
     - [T5](exam_type)
+    - formative assessment
+    - summative assessment
+    - end semester
 
 - intent: provide_max_marks
   examples: |
@@ -164,6 +341,59 @@ nlu:
     - [50](max_marks) marks total
     - total marks [75](max_marks)
     - [30](max_marks) marks maximum
+    - exam is for [20](max_marks) marks
+    - [100](max_marks) total
+
+- intent: provide_question_marks
+  examples: |
+    - Q1 is [10](max_marks) marks Q2 is [15](max_marks) marks
+    - question 1 [5](max_marks) question 2 [10](max_marks) question 3 [15](max_marks)
+    - marks are Q1:[10](max_marks) Q2:[10](max_marks) Q3:[20](max_marks)
+    - each question is [5](max_marks) marks
+    - Q1 [2](max_marks) Q2 [3](max_marks) Q3 [5](max_marks) Q4 [5](max_marks) Q5 [5](max_marks)
+
+- intent: set_fa_method
+  examples: |
+    - use best 3 of 5
+    - best N of M method
+    - use simple average
+    - weighted average method
+    - use method 1
+    - use method 2
+    - use method 3
+    - best [3](co_count) of [5](co_count) tests
+    - NBA recommended method
+    - use weighted FA
+
+- intent: ask_fa_methods
+  examples: |
+    - what FA methods are available
+    - explain FA weighting methods
+    - what is best N of M
+    - how does weighted average work
+    - show FA calculation methods
+    - what are the formative assessment methods
+
+- intent: add_internal_choice
+  examples: |
+    - there is internal choice
+    - answer 5 out of 8
+    - students choose 3 from 5
+    - exam has choice questions
+    - optional questions in exam
+    - answer any 4 from 6
+
+# ── STEP 4: Question to CO Mapping ───────────────────────────────────────────
+- intent: map_question_co
+  examples: |
+    - map Q3 to [CO2](co_number)
+    - this question tests [CO4](co_number)
+    - assign to [CO1](co_number)
+    - map to [CO3](co_number)
+    - this belongs to [CO2](co_number)
+    - question 1 maps to [CO1](co_number)
+    - map all questions to COs
+    - auto map questions to course outcomes
 
 - intent: analyse_question
   examples: |
@@ -172,15 +402,37 @@ nlu:
     - classify [Explain the concept of recursion](question_text)
     - bloom level for [Compare sorting algorithms](question_text)
     - analyze [Create a linked list class](question_text)
+    - what cognitive level is [Define the OSI model](question_text)
+    - classify this question [Solve the differential equation](question_text)
+    - detect bloom level for [Evaluate the efficiency of quicksort](question_text)
 
-- intent: map_question_co
+- intent: override_question_bt
   examples: |
-    - map Q3 to [CO2](co_number)
-    - this question tests [CO4](co_number)
-    - assign to [CO1](co_number)
-    - map to [CO3](co_number)
-    - this belongs to [CO2](co_number)
+    - change Q3 BT level to [L4](bt_level)
+    - override bloom level for question 2 to [analyze](bt_level)
+    - Q1 should be [L3](bt_level) not [L2](bt_level)
+    - set question 4 to [evaluate](bt_level)
+    - I disagree with the BT level for Q2
+    - change the cognitive level of question 1
 
+- intent: confirm_question_mapping
+  examples: |
+    - question mapping looks correct
+    - confirm Q to CO mapping
+    - approve the mapping table
+    - mapping is fine
+    - save question mappings
+    - the Q-CO-BT table is correct
+
+- intent: ask_question_mapping_rules
+  examples: |
+    - how are questions mapped to COs
+    - explain question CO mapping rules
+    - what are the AI mapping rules
+    - how does BT level detection work
+    - explain question analysis
+
+# ── STEP 5: Student Marks Entry ───────────────────────────────────────────────
 - intent: upload_marks_intent
   examples: |
     - upload marks
@@ -190,6 +442,52 @@ nlu:
     - upload student scores
     - enter exam marks
     - marks upload process
+    - submit marks
+    - add student marks
+
+- intent: enter_marks_manual
+  examples: |
+    - I will enter marks manually
+    - manual marks entry
+    - type marks for each student
+    - enter marks one by one
+    - manual entry mode
+
+- intent: ask_marks_format
+  examples: |
+    - what format for marks upload
+    - CSV format for marks
+    - how to format the marks file
+    - what columns in marks CSV
+    - marks file format
+    - Excel format for marks
+
+- intent: report_absent_student
+  examples: |
+    - student [S001](student_id) was absent
+    - mark [S002](student_id) as absent
+    - [S003](student_id) did not attend
+    - absent student [S004](student_id)
+    - [S005](student_id) is AB
+
+- intent: validate_marks
+  examples: |
+    - validate the marks
+    - check marks for errors
+    - are the marks correct
+    - verify student marks
+    - check for marks exceeding maximum
+
+# ── Attainment Calculations ───────────────────────────────────────────────────
+- intent: calculate_attainment
+  examples: |
+    - calculate attainment
+    - compute CO attainment
+    - run attainment calculation
+    - calculate course outcome attainment
+    - compute attainment for this course
+    - run the attainment pipeline
+    - calculate CO attainment for [CS301](course_code)
 
 - intent: explain_attainment
   examples: |
@@ -199,24 +497,129 @@ nlu:
     - explain attainment calculation
     - how did you get this percentage
     - attainment formula
+    - show me the calculation steps
+    - explain the attainment result
+
+- intent: ask_direct_attainment
+  examples: |
+    - what is direct attainment
+    - show direct CO attainment
+    - how is direct attainment calculated
+    - direct attainment formula
+    - explain direct measurement
+
+- intent: ask_indirect_attainment
+  examples: |
+    - what is indirect attainment
+    - how is indirect attainment calculated
+    - survey based attainment
+    - Likert scale attainment
+    - indirect measurement formula
+    - how to calculate indirect CO attainment
+
+- intent: ask_final_attainment
+  examples: |
+    - what is final CO attainment
+    - show final attainment
+    - 80 20 blend result
+    - final attainment formula
+    - combined attainment result
+
+- intent: ask_fa_attainment
+  examples: |
+    - what is FA attainment
+    - formative assessment attainment
+    - T1 T2 T3 attainment
+    - FA CO attainment
+    - best 3 of 5 result
+    - formative attainment calculation
+
+- intent: ask_sa_attainment
+  examples: |
+    - what is SA attainment
+    - end semester attainment
+    - SEE attainment
+    - summative attainment
+    - SA CO attainment result
+
+- intent: set_threshold
+  examples: |
+    - set threshold to [40](threshold_value) percent
+    - use [60](threshold_value)% threshold
+    - threshold is [50](threshold_value)
+    - change attainment threshold to [40](threshold_value)
+    - set pass threshold [60](threshold_value)
+
+- intent: set_fa_sa_weights
+  examples: |
+    - FA weight [40](fa_weight) SA weight [60](sa_weight)
+    - set FA to [40](fa_weight) percent and SA to [60](sa_weight) percent
+    - use [30](fa_weight) FA and [70](sa_weight) SA
+    - FA [40](fa_weight) SA [60](sa_weight)
+    - change FA SA weights
+
+- intent: set_direct_indirect_blend
+  examples: |
+    - use 80 20 blend
+    - direct [80](direct_weight) indirect [20](indirect_weight)
+    - set blend to [75](direct_weight) [25](indirect_weight)
+    - use 70 30 blend
+    - direct [70](direct_weight) indirect [30](indirect_weight)
+    - change direct indirect ratio
+
+# ── PO/PSO Attainment ─────────────────────────────────────────────────────────
+- intent: calculate_po_attainment
+  examples: |
+    - calculate PO attainment
+    - compute program outcome attainment
+    - run PO attainment
+    - calculate PSO attainment
+    - PO PSO attainment calculation
+    - compute PO attainment for this course
 
 - intent: ask_po_attainment
   examples: |
     - [PO1](po_number) attainment
     - show PO results
-    - what is [PO3](po_number)
+    - what is [PO3](po_number) attainment
     - program outcome attainment
     - [PO2](po_number) percentage
     - show all PO attainments
+    - PO attainment table
+    - what is the PO attainment
 
-- intent: ask_ay_history
+- intent: ask_pso_attainment
   examples: |
-    - last year data
-    - compare [AY 2023](academic_year)
-    - show 3 year trend
-    - historical data
-    - [2022-23](academic_year) results
-    - previous year attainment
+    - PSO attainment
+    - [PSO1](pso_number) attainment
+    - program specific outcome attainment
+    - show PSO results
+    - [PSO2](pso_number) percentage
+
+- intent: ask_program_level_attainment
+  examples: |
+    - program level PO attainment
+    - aggregate PO attainment across all courses
+    - program wide attainment
+    - NBA SAR PO attainment
+    - overall program attainment
+
+- intent: ask_semester_level_attainment
+  examples: |
+    - semester level attainment
+    - attainment for this semester
+    - semester PO attainment
+    - mid program review attainment
+
+# ── Gap Analysis & CAP ────────────────────────────────────────────────────────
+- intent: ask_gap_analysis
+  examples: |
+    - show gap analysis
+    - run gap analysis
+    - which COs have gaps
+    - attainment gap report
+    - gap between target and achieved
+    - show attainment gaps
 
 - intent: ask_low_co
   examples: |
@@ -226,13 +629,221 @@ nlu:
     - low performing COs
     - failed course outcomes
     - COs below threshold
+    - COs requiring CAP
+    - show CAP required COs
 
-- intent: out_of_scope
+- intent: ask_cap_actions
   examples: |
-    - what's the weather
-    - tell me a joke
-    - how are you
-    - what's your name
-    - play music
-    - book a flight
-    - order food
+    - what corrective actions are needed
+    - show CAP recommendations
+    - corrective action plan
+    - how to improve CO attainment
+    - remedial actions for low COs
+    - what should I do for Level 1 COs
+
+- intent: set_co_target_level
+  examples: |
+    - set target to [Level 2](target_level)
+    - CO target is [Level 3](target_level)
+    - target level [Level 2](target_level)
+    - I want [Level 3](target_level) as target
+    - set attainment target to [Level 2](target_level)
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+- intent: generate_report
+  examples: |
+    - generate report
+    - create OBE report
+    - download report
+    - export report
+    - get report
+    - generate NBA report
+    - create attainment report
+    - generate CO attainment report
+    - generate PO attainment report
+    - full OBE report
+
+- intent: ask_report_sections
+  examples: |
+    - what sections are in the report
+    - show report structure
+    - what does the report contain
+    - report sections list
+    - what is included in the NBA report
+
+- intent: download_report
+  examples: |
+    - download PDF report
+    - export Excel report
+    - download the report
+    - get PDF
+    - export to Excel
+    - download NBA format
+
+- intent: ask_nba_sar_format
+  examples: |
+    - NBA SAR format
+    - export for SAR
+    - NBA accreditation report
+    - SAR data export
+    - NBA format report
+    - export for accreditation
+
+# ── History & Trends ──────────────────────────────────────────────────────────
+- intent: ask_ay_history
+  examples: |
+    - last year data
+    - compare [AY 2023](academic_year)
+    - show 3 year trend
+    - historical data
+    - [2022-23](academic_year) results
+    - previous year attainment
+    - academic year history
+    - show past attainment
+
+- intent: ask_trend_analysis
+  examples: |
+    - show trend analysis
+    - attainment trend over years
+    - is attainment improving
+    - trend for [CO1](co_number)
+    - year on year comparison
+    - attainment trend chart
+
+- intent: compare_academic_years
+  examples: |
+    - compare [2023-24](academic_year) with [2024-25](academic_year)
+    - compare this year with last year
+    - side by side comparison
+    - before after comparison
+    - compare two academic years
+
+# ── NBA Standards ─────────────────────────────────────────────────────────────
+- intent: ask_nba_standard
+  examples: |
+    - what are NBA standards
+    - explain NBA guidelines
+    - NBA accreditation requirements
+    - OBE NBA rules
+    - what does NBA require
+    - NBA compliance
+
+- intent: ask_po_list
+  examples: |
+    - show all 12 POs
+    - list program outcomes
+    - what are the NBA POs
+    - show PO definitions
+    - all program outcomes
+    - NBA standard POs
+
+- intent: ask_attainment_levels
+  examples: |
+    - what are the attainment levels
+    - explain Level 1 Level 2 Level 3
+    - attainment level classification
+    - what is Level 3 attainment
+    - NBA attainment levels
+    - what percentage is Level 2
+
+- intent: ask_80_20_blend
+  examples: |
+    - explain 80 20 blend
+    - what is direct indirect blend
+    - 80 percent direct 20 percent indirect
+    - NBA 80 20 rule
+    - direct indirect attainment formula
+    - how is final attainment calculated
+
+- intent: ask_best_n_of_m
+  examples: |
+    - explain best N of M
+    - what is best 3 of 5
+    - how does best N of M work
+    - NBA FA rule
+    - best N of M formula
+    - top N test scores
+
+# ── OBE Full Wizard (Steps 5-12) ──────────────────────────────────────────────
+- intent: obe_wizard
+  examples: |
+    - start OBE wizard
+    - begin full OBE workflow
+    - run complete OBE process
+    - start the full workflow
+    - begin attainment wizard
+    - run OBE pipeline
+    - full OBE setup
+    - start from beginning
+    - begin NBA workflow
+    - run complete attainment process
+
+- intent: start_obe_wizard
+  examples: |
+    - start wizard
+    - begin wizard
+    - start full wizard
+    - launch OBE wizard
+    - start complete workflow
+    - begin complete OBE
+    - start NBA wizard
+    - run wizard
+    - initiate OBE wizard
+
+- intent: confirm_cos
+  examples: |
+    - CONFIRMED
+    - confirmed
+    - I confirm the COs
+    - confirm course outcomes
+    - yes confirmed
+    - COs are correct
+    - approve the COs
+    - CO mapping confirmed
+    - confirm and proceed
+    - yes the COs look good
+    - confirm COs and mapping
+    - these COs are fine
+    - proceed with these COs
+
+- intent: provide_exam_config
+  examples: |
+    - 5 tests each has 5 questions of 10 marks
+    - end sem 5 questions of 20 marks
+    - use best 3 of 5 threshold 40
+    - FA method best 3 of 5
+    - exam configuration
+    - here is my exam config
+    - test configuration details
+    - formative assessment setup
+    - 5 formative tests end sem 100 marks
+    - configure exams with best N of M
+    - exam setup best 3 of 5 threshold 40 percent
+
+- intent: provide_question_mapping
+  examples: |
+    - T1 Q1 CO1 implement stack
+    - question mapping T1 Q1 maps to CO1
+    - here is the question CO mapping
+    - T1 Q1 CO1 T1 Q2 CO2
+    - map questions to COs
+    - question paper mapping
+    - T2 Q1 CO2 analyse BST
+    - end sem Q1 CO1 Q2 CO2
+    - question to CO assignment
+    - here are the question mappings
+
+- intent: provide_marks
+  examples: |
+    - here are the student marks
+    - student marks data
+    - upload marks
+    - marks for all students
+    - here is the CSV data
+    - student scores
+    - marks and survey data
+    - indirect survey results
+    - CO survey ratings
+    - Likert survey data
+    - marks plus indirect survey
+    - student performance data

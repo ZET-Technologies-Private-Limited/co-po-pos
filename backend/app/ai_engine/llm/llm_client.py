@@ -17,7 +17,7 @@ class LLMClient:
     def __init__(self, provider: Optional[str] = None):
         self.settings = get_settings()
         self.logger = SystemLogger("llm_client")
-        self.provider = (provider or self.settings.llm_provider or "gemini").lower()
+        self.provider = (provider or self.settings.llm_provider or "ollama").lower()
         self.request_timeout_sec = float(self.settings.llm_request_timeout_sec)
         self.llm = None
         self._initialize_llm()
@@ -47,6 +47,7 @@ class LLMClient:
                     temperature=self.settings.llm_temperature,
                     max_tokens=self.settings.llm_max_tokens,
                     max_retries=0,
+                    convert_system_message_to_human=True,
                 )
                 self.logger.info("Gemini LLM initialized")
             
@@ -146,8 +147,16 @@ class LLMClient:
         try:
             messages = []
             if system_prompt:
-                messages.append(SystemMessage(content=system_prompt))
-            messages.append(HumanMessage(content=prompt))
+                # Gemini doesn't support SystemMessage natively — merge into HumanMessage
+                # convert_system_message_to_human=True handles this, but as belt-and-suspenders
+                # for other providers that may not support it, we keep SystemMessage here.
+                if self.provider == "gemini":
+                    messages.append(HumanMessage(content=f"{system_prompt}\n\n{prompt}"))
+                else:
+                    messages.append(SystemMessage(content=system_prompt))
+                    messages.append(HumanMessage(content=prompt))
+            else:
+                messages.append(HumanMessage(content=prompt))
             
             response_text = await self._invoke_langchain(messages)
             if response_text:
@@ -241,7 +250,7 @@ class MultiLLMClient:
             "ollama": LLMClient("ollama"),
         }
         self.logger = SystemLogger("multi_llm_client")
-        self.default_provider = (settings.llm_provider or "gemini").lower()
+        self.default_provider = (settings.llm_provider or "ollama").lower()
     
     async def generate(
         self, prompt: str, provider: Optional[str] = None,

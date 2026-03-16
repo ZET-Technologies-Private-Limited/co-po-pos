@@ -92,6 +92,14 @@ class DatabaseManager:
                 await conn.execute(text("ALTER TABLE program_specific_outcomes DROP CONSTRAINT IF EXISTS program_specific_outcomes_code_key"))
                 await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_program_outcome_program_code ON program_outcomes (program, code)"))
                 await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_program_specific_outcome_program_code ON program_specific_outcomes (program, code)"))
+                # Backward-compatible schema fix: course detail fields used in workflow screens.
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS course_type VARCHAR(20) DEFAULT 'core'"))
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS enrolled_students INTEGER DEFAULT 0"))
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS fa_method VARCHAR(50) DEFAULT 'best_n_of_m'"))
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS fa_best_n INTEGER DEFAULT 3"))
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS fa_total_components INTEGER DEFAULT 5"))
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS fa_weight DOUBLE PRECISION DEFAULT 0.40"))
+                await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS sa_weight DOUBLE PRECISION DEFAULT 0.60"))
             logger.info("Database tables created successfully")
         except SQLAlchemyError as e:
             logger.error(f"Failed to create tables: {str(e)}", exc_info=True)

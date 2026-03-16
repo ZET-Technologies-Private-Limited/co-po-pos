@@ -4,7 +4,7 @@ import { useAuthStore } from "@/lib/authStore";
 import { AdminDashboardView } from "@/components/dashboard/AdminDashboardView";
 import { DepartmentHeadDashboardView } from "@/components/dashboard/DepartmentHeadDashboardView";
 import { LeadDashboardView } from "@/components/dashboard/SubjectLeadDashboardView";
-import { FacultyDashboardView } from "@/components/dashboard/FacultyDashboardView";
+import { FacultyDashboardBackendView } from "@/components/dashboard/FacultyDashboardBackendView";
 import { StudentDashboardView } from "@/components/dashboard/StudentDashboardView";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -26,9 +26,9 @@ export default function DashboardPage() {
             {activeRole === "admin" && <AdminDashboardView />}
             {activeRole === "department_head" && <DepartmentHeadDashboardView />}
             {activeRole === "subject_lead" && <LeadDashboardView />}
-            {activeRole === "faculty" && <FacultyDashboardView />}
+            {activeRole === "faculty" && <FacultyDashboardBackendView />}
             {activeRole === "student" && <StudentDashboardView />}
-            {!activeRole && <FacultyDashboardView />}
+            {!activeRole && <FacultyDashboardBackendView />}
           </motion.div>
         </AnimatePresence>
       </div>

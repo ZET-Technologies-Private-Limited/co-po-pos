@@ -19,6 +19,7 @@ ROLE_ALIASES = {
     "student": UserRole.VIEWER.value,
     "lead": UserRole.ACCREDITATION_OFFICER.value,
     "course_lead": UserRole.ACCREDITATION_OFFICER.value,
+    "subject_lead": UserRole.COURSE_LEAD.value,
 }
 
 
@@ -30,6 +31,8 @@ class AuthService:
         self, username: str, email: str, password: str,
         full_name: str, role: str = "faculty", department: str | None = None
     ) -> User:
+        from app.core.config.constants import UserRole
+        
         normalized_role = self._normalize_role(role)
 
         result = await self.session.execute(
@@ -38,13 +41,16 @@ class AuthService:
         if result.scalar_one_or_none():
             raise ValueError(f"User with email {email} already exists")
         
+        # Convert string role to UserRole enum
+        role_enum = UserRole(normalized_role) if isinstance(normalized_role, str) else normalized_role
+        
         user = User(
             id=str(uuid.uuid4()),
             username=username,
             email=email,
             hashed_password=hash_password(password),
             full_name=full_name,
-            role=normalized_role,
+            role=role_enum,
             department=department,
         )
         self.session.add(user)

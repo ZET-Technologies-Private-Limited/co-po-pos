@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, 
 from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional, Tuple
-from sqlalchemy import select, delete, func, and_
+from sqlalchemy import select, delete, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 import hashlib
@@ -48,6 +48,11 @@ from app.modules.attainment_engine.tasks.attainment_tasks import run_full_pipeli
 from app.core.infrastructure.redis_client import get_json, set_json, delete_key
 from app.core.infrastructure.multi_tier_cache import invalidate_course_report_cache, invalidate_exam_preview_cache
 from app.services.course_lead_service import CourseLeadService
+from app.services.three_message_flow_service import (
+    ThreeMessageFlowService,
+    validate_course_matrix_before_save,
+    validate_matrix,
+)
 from app.core.config.settings import get_settings
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
@@ -93,8 +98,16 @@ def _new_otp() -> str:
 
 
 async def _verify_reset_identity(session: AsyncSession, employee_id: str, email: str) -> User:
+    emp_lower = employee_id.strip().lower()
+    email_lower = email.strip().lower()
     result = await session.execute(
-        select(User).where(User.username == employee_id, User.email == email)
+        select(User).where(
+            func.lower(User.email) == email_lower,
+            or_(
+                func.lower(User.username) == emp_lower,
+                func.lower(User.email) == emp_lower,
+            ),
+        )
     )
     user = result.scalar_one_or_none()
     if not user:
@@ -233,11 +246,26 @@ async def _safe_set_json(key: str, payload: Dict[str, Any], ttl_seconds: Optiona
         return
 
 
+def _default_ay_configs() -> List[Dict[str, Any]]:
+    return [
+        {"code": "2025-26", "is_active": True, "is_locked": False, "read_only": False, "lock_date": None},
+        {"code": "2024-25", "is_active": False, "is_locked": True, "read_only": True, "lock_date": "2025-06-30T00:00:00Z"},
+        {"code": "2023-24", "is_active": False, "is_locked": True, "read_only": True, "lock_date": "2024-06-30T00:00:00Z"},
+        {"code": "2022-23", "is_active": False, "is_locked": True, "read_only": True, "lock_date": "2023-06-30T00:00:00Z"},
+    ]
+
+
 async def _get_ay_configs() -> List[Dict[str, Any]]:
     cached = await _safe_get_json("faculty:ay_configs")
-    if cached and isinstance(cached.get("items"), list):
-        return cached["items"]
-    return []
+    items = cached.get("items") if isinstance(cached, dict) else None
+    if isinstance(items, list):
+        normalized = [item for item in items if isinstance(item, dict) and item.get("code")]
+        if normalized:
+            return normalized
+
+    defaults = _default_ay_configs()
+    await _safe_set_json("faculty:ay_configs", {"items": defaults}, ttl_seconds=86400 * 30)
+    return defaults
 
 
 async def _get_current_ay() -> Optional[str]:
@@ -294,6 +322,18 @@ async def _get_co_lock(course_id: str) -> Dict[str, Any]:
     return {"course_id": course_id, "locked": False, "locked_by": None, "reason": None, "updated_at": _now_iso()}
 
 
+def _co_lock_blocks_for_user(lock: Dict[str, Any], user: User) -> bool:
+    """Return True only when CO lock should block current user."""
+    if not lock.get("locked"):
+        return False
+
+    role = _role_value(user)
+    if role in {"admin", "hod", "accreditation_officer"}:
+        return False
+
+    return str(lock.get("locked_by") or "") != str(user.id)
+
+
 def _co_defaults_key(course_code: str, regulation: str) -> str:
     return f"co_defaults:{course_code.strip().upper()}:{regulation.strip()}"
 
@@ -318,17 +358,157 @@ def _role_value(user: User) -> str:
     return user.role.value if hasattr(user.role, "value") else str(user.role).lower()
 
 
-async def _assert_faculty_owns_course(session: AsyncSession, user: User, course_id: str) -> None:
-    if _role_value(user) != "faculty":
-        return
-
-    result = await session.execute(select(Course).where(Course.id == course_id))
+async def _assert_faculty_owns_course(session: AsyncSession, user: User, course_id: str) -> Course:
+    result = await session.execute(
+        select(Course).where((Course.id == course_id) | (Course.course_code == course_id))
+    )
     course = result.scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
+    if _role_value(user) != "faculty":
+        return course
+
     if str(course.created_by) != str(user.id):
         raise HTTPException(status_code=403, detail="Faculty can access only own courses")
+    return course
+
+
+def _dept_program_key(department: Optional[str]) -> str:
+    dept = (department or "").strip().upper()
+    return f"DEPT:{dept}" if dept else "DEPT:GENERAL"
+
+
+async def _count_pos_for_program(session: AsyncSession, program_key: str) -> int:
+    result = await session.execute(
+        select(func.count(ProgramOutcome.id)).where(ProgramOutcome.program == program_key)
+    )
+    return int(result.scalar() or 0)
+
+
+async def _count_psos_for_program(session: AsyncSession, program_key: str) -> int:
+    result = await session.execute(
+        select(func.count(ProgramSpecificOutcome.id)).where(ProgramSpecificOutcome.program == program_key)
+    )
+    return int(result.scalar() or 0)
+
+
+async def _ensure_nba_pos_seeded(session: AsyncSession, program_key: str) -> None:
+    existing_result = await session.execute(
+        select(ProgramOutcome.code).where(ProgramOutcome.program == program_key)
+    )
+    existing_codes = {str(code).strip().upper() for code in existing_result.scalars().all() if code}
+
+    to_create: List[ProgramOutcome] = []
+    for item in _NBA_POS:
+        code = str(item.get("code") or "").strip().upper()
+        if not code or code in existing_codes:
+            continue
+        statement = str(item.get("statement") or item.get("name") or code).strip() or code
+        to_create.append(
+            ProgramOutcome(
+                id=str(uuid.uuid4()),
+                code=code,
+                statement=statement,
+                description=statement,
+                program=program_key,
+            )
+        )
+
+    if to_create:
+        session.add_all(to_create)
+        await session.commit()
+
+
+async def _resolve_program_key_for_course(
+    session: AsyncSession,
+    course_id: str,
+    requested_program_id: Optional[str],
+    *,
+    require: str = "po",
+) -> str:
+    course_result = await session.execute(
+        select(Course).where((Course.id == course_id) | (Course.course_code == course_id))
+    )
+    course = course_result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    requested = (requested_program_id or "").strip()
+    candidates: List[str] = []
+
+    def add_candidate(value: Optional[str]) -> None:
+        key = (value or "").strip()
+        if key and key not in candidates:
+            candidates.append(key)
+
+    add_candidate(requested)
+
+    if requested:
+        program_result = await session.execute(
+            select(Program).where((Program.id == requested) | (Program.code == requested))
+        )
+        program_row = program_result.scalar_one_or_none()
+        if program_row:
+            add_candidate(program_row.code)
+
+    add_candidate(_dept_program_key(getattr(course, "department", None)))
+
+    mapped_po_keys = await session.execute(
+        select(ProgramOutcome.program)
+        .join(co_po_mapping_table, co_po_mapping_table.c.program_outcome_id == ProgramOutcome.id)
+        .join(CourseOutcome, CourseOutcome.id == co_po_mapping_table.c.course_outcome_id)
+        .where(CourseOutcome.course_id == course.id)
+        .distinct()
+    )
+    for key in mapped_po_keys.scalars().all():
+        add_candidate(key)
+
+    mapped_pso_keys = await session.execute(
+        select(ProgramSpecificOutcome.program)
+        .join(co_pso_mapping_table, co_pso_mapping_table.c.program_specific_outcome_id == ProgramSpecificOutcome.id)
+        .join(CourseOutcome, CourseOutcome.id == co_pso_mapping_table.c.course_outcome_id)
+        .where(CourseOutcome.course_id == course.id)
+        .distinct()
+    )
+    for key in mapped_pso_keys.scalars().all():
+        add_candidate(key)
+
+    if not candidates:
+        raise HTTPException(status_code=400, detail="Unable to resolve a program key for this course")
+
+    best_key = candidates[0]
+    best_score = -1
+    best_po_count = 0
+    best_pso_count = 0
+
+    for key in candidates:
+        po_count = await _count_pos_for_program(session, key)
+        pso_count = await _count_psos_for_program(session, key)
+        if require == "pso":
+            score = (2 if pso_count > 0 else 0) + (1 if po_count > 0 else 0)
+        elif require == "both":
+            score = (2 if po_count > 0 else 0) + (2 if pso_count > 0 else 0)
+        else:
+            score = (2 if po_count > 0 else 0) + (1 if pso_count > 0 else 0)
+        if requested and key == requested:
+            score += 1
+        if score > best_score:
+            best_score = score
+            best_key = key
+            best_po_count = po_count
+            best_pso_count = pso_count
+
+    if require in {"po", "both"} and best_po_count <= 0:
+        await _ensure_nba_pos_seeded(session, best_key)
+        best_po_count = await _count_pos_for_program(session, best_key)
+
+    if require == "po" and best_po_count <= 0:
+        raise HTTPException(status_code=400, detail="No Program Outcomes found for this course context")
+    if require == "pso" and best_pso_count <= 0:
+        raise HTTPException(status_code=400, detail="No Program Specific Outcomes found for this course context")
+
+    return best_key
 
 
 async def _assert_faculty_owns_exam(session: AsyncSession, user: User, exam_id: str) -> Exam:
@@ -345,6 +525,13 @@ class CourseUpdateRequest(BaseModel):
     credits: Optional[int] = None
     semester: Optional[int] = None
     description: Optional[str] = None
+    course_type: Optional[str] = None
+    enrolled_students: Optional[int] = None
+    fa_method: Optional[str] = None
+    fa_best_n: Optional[int] = None
+    fa_total_components: Optional[int] = None
+    fa_weight: Optional[float] = None
+    sa_weight: Optional[float] = None
     department: Optional[str] = None
     created_by: Optional[str] = None
 
@@ -387,12 +574,19 @@ class CODefaultsPayload(BaseModel):
     templates: List[Dict[str, Any]]
 
 
+class ChatbotValidateMatrixRequest(BaseModel):
+    session_id: str
+    mapping: Dict[str, Any]
+    course_id: Optional[str] = None
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTH
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/auth/register", response_model=TokenResponse, summary="Register a new user")
 async def register(payload: UserRegister, session: AsyncSession = Depends(get_session)):
+    from sqlalchemy.exc import IntegrityError
     svc = AuthService(session)
     try:
         user = await svc.register_user(
@@ -402,6 +596,13 @@ async def register(payload: UserRegister, session: AsyncSession = Depends(get_se
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="A user with this email or username already exists.")
+    except Exception as exc:
+        await session.rollback()
+        logger.error(f"Registration error: {exc}")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(exc)}")
     token = svc.create_access_token(user.id)
     return {"access_token": token, "token_type": "bearer", "user_id": user.id, "role": user.role}
 
@@ -456,12 +657,18 @@ async def auth_role_options(current_user: User = Depends(get_current_user)):
 async def auth_forgot_password(payload: ForgotPasswordRequest, session: AsyncSession = Depends(get_session)):
     await _verify_reset_identity(session, payload.employee_id, str(payload.email))
     issued = await _issue_reset_otp(str(payload.email))
-    return {
+    from app.core.config.settings import get_settings
+    settings = get_settings()
+    resp: Dict[str, Any] = {
         "status": "otp_sent",
         "email": str(payload.email),
         "expires_in_seconds": _seconds_remaining(issued["expires_at"]),
         "resend_in_seconds": _seconds_remaining(issued["resend_after"]),
     }
+    # In development/debug mode return the OTP directly since no SMTP is configured
+    if settings.debug or settings.environment != "production":
+        resp["dev_otp"] = issued["otp"]
+    return resp
 
 
 @router.post("/auth/resend-otp", summary="Resend OTP for password reset")
@@ -751,13 +958,20 @@ async def list_audit_log(
 
 @router.get("/settings/thresholds", summary="Get attainment level thresholds")
 async def get_thresholds(current_user: User = Depends(get_current_user)):
+    s = get_settings()
+    l2_default = getattr(s, "attainment_level_2_threshold", 0.50)
+    l3_default = getattr(s, "attainment_level_3_threshold", 0.60)
     cached = await get_json("obe:thresholds")
     if cached:
-        return {"level2": cached.get("level2", 0.6), "level3": cached.get("level3", 0.7)}
-    s = get_settings()
+        return {
+            "level2": cached.get("level2", l2_default),
+            "level3": cached.get("level3", l3_default),
+            "pass_threshold": cached.get("pass_threshold", getattr(s, "co_attainment_threshold", 0.40)),
+        }
     return {
-        "level2": getattr(s, "attainment_level_2_threshold", 0.6),
-        "level3": getattr(s, "attainment_level_3_threshold", 0.7),
+        "level2": l2_default,
+        "level3": l3_default,
+        "pass_threshold": getattr(s, "co_attainment_threshold", 0.40),
     }
 
 
@@ -770,42 +984,24 @@ async def update_thresholds(
         raise HTTPException(status_code=403, detail="Only admin or HOD can update thresholds")
     level2 = payload.get("level2")
     level3 = payload.get("level3")
-    if level2 is not None and not (0 <= level2 <= 1):
+    pass_threshold = payload.get("pass_threshold")
+    if level2 is not None and not (0 < level2 < 1):
         raise HTTPException(status_code=400, detail="level2 must be between 0 and 1")
-    if level3 is not None and not (0 <= level3 <= 1):
+    if level3 is not None and not (0 < level3 < 1):
         raise HTTPException(status_code=400, detail="level3 must be between 0 and 1")
+    if pass_threshold is not None and not (0 < pass_threshold < 1):
+        raise HTTPException(status_code=400, detail="pass_threshold must be between 0 and 1")
+    if level2 is not None and level3 is not None and level2 >= level3:
+        raise HTTPException(status_code=400, detail="level2 must be less than level3")
     current = await get_json("obe:thresholds") or {}
     if level2 is not None:
         current["level2"] = float(level2)
     if level3 is not None:
         current["level3"] = float(level3)
+    if pass_threshold is not None:
+        current["pass_threshold"] = float(pass_threshold)
     await set_json("obe:thresholds", current)
     return {"status": "saved", "thresholds": current}
-
-
-@router.get("/audit-log", summary="List audit log entries (admin/HOD)")
-async def list_audit_log(
-    limit: int = Query(200, ge=1, le=500),
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-):
-    if _role_value(current_user) not in {"admin", "hod"}:
-        raise HTTPException(status_code=403, detail="Audit log is available only for admin or HOD")
-    result = await session.execute(
-        select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit)
-    )
-    rows = result.scalars().all()
-    return [
-        {
-            "id": str(r.id),
-            "timestamp": r.timestamp.isoformat() if r.timestamp else "",
-            "type": r.entity_type or "system",
-            "userId": str(r.user_id) if r.user_id else "",
-            "action": r.action or "",
-            "ip": r.ip_address or "",
-        }
-        for r in rows
-    ]
 
 
 @router.get("/faculty/notifications", summary="Faculty notification center")
@@ -843,8 +1039,8 @@ async def faculty_dashboard(
     current_user: User = Depends(get_current_user),
 ):
     role = _role_value(current_user)
-    if role != "faculty":
-        raise HTTPException(status_code=403, detail="Faculty dashboard is available only for faculty role")
+    if role not in {"faculty", "course_lead", "subject_lead"}:
+        raise HTTPException(status_code=403, detail="Faculty dashboard is available for faculty, course lead, and subject lead roles")
 
     now_utc = datetime.utcnow()
     now_local = datetime.now()
@@ -948,7 +1144,7 @@ async def faculty_dashboard(
                 "due_date": due_iso,
                 "due_in_days": due_days,
                 "overdue": overdue,
-                "action_link": f"/faculty/course/{course.id}/marks/{str(ex.exam_type.value if hasattr(ex.exam_type, 'value') else ex.exam_type)}",
+                "action_link": f"/faculty/course/{course.id}/marks/{ex.id}",
             })
 
             marks_upload_status.append({
@@ -973,7 +1169,7 @@ async def faculty_dashboard(
                     "due_date": due_iso,
                     "due_date_label": due_note,
                     "overdue": overdue,
-                    "action_link": f"/faculty/course/{course.id}/marks/{str(ex.exam_type.value if hasattr(ex.exam_type, 'value') else ex.exam_type)}",
+                    "action_link": f"/faculty/course/{course.id}/marks/{ex.id}",
                     "status": "pending",
                 })
 
@@ -2072,14 +2268,38 @@ async def create_course(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    from sqlalchemy.exc import IntegrityError as SAIntegrityError
+
+    role = _role_value(current_user)
+    if role not in {"admin", "faculty", "course_lead", "subject_lead"}:
+        raise HTTPException(status_code=403, detail="Only faculty/admin roles can create courses")
+
     svc = CourseService(session)
-    course = await svc.create_course(
-        course_code=payload.course_code, course_name=payload.course_name,
-        credits=payload.credits, semester=payload.semester,
-        description=payload.description, faculty_id=current_user.id,
-    )
-    logger.info(f"Course created: {course.id}")
-    return course
+    try:
+        course = await svc.create_course(
+            course_code=payload.course_code, course_name=payload.course_name,
+            credits=payload.credits, semester=payload.semester,
+            description=payload.description, faculty_id=current_user.id,
+            course_type=payload.course_type,
+            enrolled_students=payload.enrolled_students,
+            fa_method=payload.fa_method,
+            fa_best_n=payload.fa_best_n,
+            fa_total_components=payload.fa_total_components,
+            fa_weight=payload.fa_weight,
+            sa_weight=payload.sa_weight,
+            department=payload.department or getattr(current_user, 'department', None),
+        )
+        logger.info(f"Course created: {course.id}")
+        return course
+    except SAIntegrityError as e:
+        await session.rollback()
+        if 'course_code' in str(e) or 'UNIQUE' in str(e).upper():
+            raise HTTPException(status_code=409, detail=f"A course with code '{payload.course_code}' already exists.")
+        raise HTTPException(status_code=409, detail="A course with these details already exists.")
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Course creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create course: {str(e)}")
 
 
 @router.get("/courses", response_model=List[CourseResponse], summary="List all courses")
@@ -2101,8 +2321,10 @@ async def get_course(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    svc = CourseService(session)
-    course = await svc.get_course(course_id)
+    result = await session.execute(
+        select(Course).where((Course.id == course_id) | (Course.course_code == course_id))
+    )
+    course = result.scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
     if _role_value(current_user) == "faculty" and str(getattr(course, "created_by", "")) != str(current_user.id):
@@ -2179,7 +2401,7 @@ async def add_course_outcome(
 ):
     await _assert_faculty_owns_course(session, current_user, course_id)
     lock = await _get_co_lock(course_id)
-    if lock.get("locked"):
+    if _co_lock_blocks_for_user(lock, current_user):
         raise HTTPException(status_code=409, detail="CO generation is locked for this course")
 
     svc = CoGenerationService(session)
@@ -2227,7 +2449,7 @@ async def update_course_outcome(
 ):
     await _assert_faculty_owns_course(session, current_user, course_id)
     lock = await _get_co_lock(course_id)
-    if lock.get("locked"):
+    if _co_lock_blocks_for_user(lock, current_user):
         raise HTTPException(status_code=409, detail="CO generation is locked for this course")
 
     result = await session.execute(
@@ -2271,7 +2493,7 @@ async def delete_course_outcome(
 ):
     await _assert_faculty_owns_course(session, current_user, course_id)
     lock = await _get_co_lock(course_id)
-    if lock.get("locked"):
+    if _co_lock_blocks_for_user(lock, current_user):
         raise HTTPException(status_code=409, detail="CO generation is locked for this course")
 
     result = await session.execute(
@@ -2301,6 +2523,8 @@ async def upload_syllabus_file(
 ):
     """Accept .pdf, .docx, or .txt syllabus files; extract text and save to Course.syllabus."""
     await _assert_faculty_owns_course(session, current_user, course_id)
+    
+    # Fetch the course
     result = await session.execute(select(Course).where(Course.id == course_id))
     course = result.scalar_one_or_none()
     if not course:
@@ -2311,6 +2535,7 @@ async def upload_syllabus_file(
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
 
+    # Extract text based on file type
     if filename.endswith(".txt"):
         try:
             text = content.decode("utf-8")
@@ -2323,6 +2548,7 @@ async def upload_syllabus_file(
             reader = PdfReader(io.BytesIO(content))
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception as exc:
+            logger.error(f"PDF extraction failed: {exc}")
             raise HTTPException(status_code=422, detail=f"PDF text extraction failed: {exc}")
     elif filename.endswith(".docx"):
         try:
@@ -2331,13 +2557,21 @@ async def upload_syllabus_file(
             doc = DocxDocument(io.BytesIO(content))
             text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
         except Exception as exc:
+            logger.error(f"DOCX extraction failed: {exc}")
             raise HTTPException(status_code=422, detail=f"DOCX text extraction failed: {exc}")
     else:
         raise HTTPException(status_code=415, detail="Unsupported file type. Accepted: .pdf, .docx, .txt")
 
-    text = text[:5000]
+    # Truncate and save
+    text = text[:5000] if text else ""
     course.syllabus = text
+    
+    # Explicitly flush and commit to ensure data persists
+    await session.flush()
     await session.commit()
+    
+    logger.info(f"Syllabus uploaded for course {course_id}: {len(text)} chars")
+    
     return {
         "course_id": course_id,
         "filename": file.filename,
@@ -2474,13 +2708,19 @@ async def update_co_mappings(
     po_inserted = []
     pso_inserted = []
 
-    # Re-insert PO mappings by code lookup
     # Re-insert PO mappings by code lookup (deduplicated — one mapping per code)
     if payload.po_codes:
-        po_filter = ProgramOutcome.code.in_(payload.po_codes)
-        if payload.program_id:
-            po_filter = (ProgramOutcome.code.in_(payload.po_codes)) & (ProgramOutcome.program == payload.program_id)
+        # Resolve program key: explicit > dept key; auto-seed NBA POs if needed
+        _co_course_result = await session.execute(select(Course).where(Course.id == course_id))
+        _co_course = _co_course_result.scalar_one_or_none()
+        _dept_key = _dept_program_key(getattr(_co_course, "department", None)) if _co_course else "DEPT:GENERAL"
+        _resolved_prog = payload.program_id or _dept_key
+        await _ensure_nba_pos_seeded(session, _resolved_prog)
+        po_filter = (ProgramOutcome.code.in_(payload.po_codes)) & (ProgramOutcome.program == _resolved_prog)
         po_objs = (await session.execute(select(ProgramOutcome).where(po_filter))).scalars().all()
+        if not po_objs:
+            # fallback: any program
+            po_objs = (await session.execute(select(ProgramOutcome).where(ProgramOutcome.code.in_(payload.po_codes)))).scalars().all()
         seen_po: set = set()
         for po_obj in po_objs:
             if po_obj.code in seen_po:
@@ -2490,7 +2730,7 @@ async def update_co_mappings(
                 co_po_mapping_table.insert().values(
                     course_outcome_id=co_id,
                     program_outcome_id=po_obj.id,
-                    similarity_score=1.0,
+                    similarity_score=round(max(1, min(3, payload.po_levels.get(po_obj.code, 1))) / 3.0, 6),
                 )
             )
             po_inserted.append(po_obj.code)
@@ -2510,18 +2750,24 @@ async def update_co_mappings(
                 co_pso_mapping_table.insert().values(
                     course_outcome_id=co_id,
                     program_specific_outcome_id=pso_obj.id,
-                    similarity_score=1.0,
+                    similarity_score=round(max(1, min(3, payload.pso_levels.get(pso_obj.code, 1))) / 3.0, 6),
                 )
             )
             pso_inserted.append(pso_obj.code)
 
     await session.commit()
     await invalidate_course_report_cache(course_id)
+
+    validation = await validate_course_matrix_before_save(session, course_id)
     return {
         "co_id": co_id,
         "po_mappings": po_inserted,
         "pso_mappings": pso_inserted,
         "status": "updated",
+        "warnings": validation.get("warnings", []),
+        "validation_errors": validation.get("errors", []),
+        "can_save": validation.get("can_save", True),
+        "matrix_density": validation.get("matrix_density"),
     }
 
 
@@ -2598,7 +2844,7 @@ async def regenerate_single_course_outcome(
 ):
     await _assert_faculty_owns_course(session, current_user, course_id)
     lock = await _get_co_lock(course_id)
-    if lock.get("locked"):
+    if _co_lock_blocks_for_user(lock, current_user):
         raise HTTPException(status_code=409, detail="CO generation is locked for this course")
 
     svc = CoGenerationService(session)
@@ -2642,72 +2888,185 @@ async def co_coverage_analysis(
     co_result = await session.execute(
         select(CourseOutcome).where(CourseOutcome.course_id == course_id)
     )
-    cos = co_result.scalars().all()
-    co_statements_lower = [(co.code, co.statement.lower()) for co in cos]
+    cos = list(co_result.scalars().all())
 
-    import re as _re
+    svc = CoGenerationService(session)
+    units = svc._parse_syllabus_units(syllabus)
+    coverage_result = svc._validate_unit_coverage(units, cos)
 
-    # Parse syllabus into units/topics by detecting unit headers
-    unit_pattern = _re.compile(
-        r"(?:unit|chapter|module|section|topic)\s*[-:]?\s*\d+[^\n]*|^\d+\.\s+[A-Z][^\n]+",
-        _re.IGNORECASE | _re.MULTILINE,
-    )
-    unit_matches = list(unit_pattern.finditer(syllabus))
+    coverage_items = [
+        {
+            "unit": item.get("unit", ""),
+            "is_covered": bool(item.get("covered")),
+            "covered_by": item.get("covered_by", []),
+            "color": "green" if item.get("covered") else "amber",
+        }
+        for item in coverage_result.get("unit_details", [])
+    ]
 
-    units: List[Dict] = []
-    if unit_matches:
-        for i, m in enumerate(unit_matches):
-            start = m.end()
-            end = unit_matches[i + 1].start() if i + 1 < len(unit_matches) else len(syllabus)
-            unit_name = m.group(0).strip()
-            unit_body = syllabus[start:end].strip()
-            units.append({"name": unit_name, "body": unit_body})
-    else:
-        # No unit headers — treat paragraphs as topics
-        paragraphs = [p.strip() for p in syllabus.split("\n\n") if len(p.strip()) > 20]
-        for i, para in enumerate(paragraphs[:10], 1):
-            units.append({"name": f"Topic {i}", "body": para})
-
-    def _keywords(text: str) -> set:
-        words = set(_re.findall(r"\b[a-z]{4,}\b", text.lower()))
-        stop = {"will", "able", "student", "students", "course", "this", "that", "with", "from",
-                "have", "been", "unit", "chapter", "topic", "section", "module", "each", "also"}
-        return words - stop
-
-    coverage_items = []
-    covered_count = 0
-    for unit in units:
-        unit_kw = _keywords(unit["name"] + " " + unit["body"][:400])
-        covered_by: List[str] = []
-        for co_code, co_stmt in co_statements_lower:
-            co_kw = _keywords(co_stmt)
-            overlap = len(unit_kw & co_kw)
-            # require at least 2 overlapping keywords for coverage
-            if overlap >= 2:
-                covered_by.append(co_code)
-        is_covered = bool(covered_by)
-        if is_covered:
-            covered_count += 1
-        coverage_items.append({
-            "unit": unit["name"],
-            "is_covered": is_covered,
-            "covered_by": covered_by,
-            "color": "green" if is_covered else "amber",
-        })
-
-    total = len(coverage_items)
+    total = int(coverage_result.get("total_units", len(coverage_items)) or 0)
+    covered_count = int(coverage_result.get("covered_count", 0) or 0)
+    uncovered_count = int(coverage_result.get("uncovered_count", max(total - covered_count, 0)) or 0)
     return {
         "course_id": course_id,
         "has_syllabus": True,
         "total_units": total,
         "covered_units": covered_count,
-        "uncovered_units": total - covered_count,
-        "coverage_pct": round((covered_count / total * 100) if total else 0, 1),
+        "covered_count": covered_count,
+        "uncovered_units": uncovered_count,
+        "uncovered_count": uncovered_count,
+        "coverage_pct": round(float(coverage_result.get("coverage_pct", (covered_count / total * 100) if total else 0)), 1),
+        "covered_unit_names": coverage_result.get("covered_units", []),
+        "uncovered_unit_names": coverage_result.get("uncovered_units", []),
+        "unit_details": coverage_result.get("unit_details", []),
         "units": coverage_items,
     }
 
 
 # ── F3-29: Export CO list (PDF / CSV) ─────────────────────────────────────────
+
+# ── Inline CO statement edit (F3-11/12) ──────────────────────────────────────
+
+class COStatementUpdateRequest(BaseModel):
+    statement: str
+    bloom_level: Optional[str] = None
+
+
+@router.put("/courses/{course_id}/outcomes/{co_id}/statement", summary="Inline edit CO statement with NBA quality validation")
+async def update_co_statement(
+    course_id: str,
+    co_id: str,
+    payload: COStatementUpdateRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    lock = await _get_co_lock(course_id)
+    if _co_lock_blocks_for_user(lock, current_user):
+        raise HTTPException(status_code=409, detail="CO generation is locked for this course")
+    svc = CoGenerationService(session)
+    try:
+        result = await svc.update_co_statement(
+            course_id=course_id,
+            co_id=co_id,
+            new_statement=payload.statement,
+            new_bloom_level=payload.bloom_level,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    await invalidate_course_report_cache(course_id)
+    return result
+
+
+# ── CO generation history (F3-15 history) ─────────────────────────────────────
+
+@router.get("/courses/{course_id}/co-history", summary="Get CO version history snapshots from Redis")
+async def get_co_history(
+    course_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    svc = CoGenerationService(session)
+    versions = await svc.get_co_history(course_id)
+    return {"course_id": course_id, "versions": versions, "count": len(versions)}
+
+
+# ── CO generation session memory (F3-14) ──────────────────────────────────────
+
+@router.get("/courses/{course_id}/co-session", summary="Get last CO generation session context from Redis")
+async def get_co_session(
+    course_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    svc = CoGenerationService(session)
+    sess = await svc.get_co_session(course_id)
+    return sess or {"course_id": course_id, "last_generated_at": None}
+
+
+# ── Per-CO item history + rollback (Part 2 Step 9) ────────────────────────────
+
+@router.get(
+    "/courses/{course_id}/outcomes/{co_id}/history",
+    summary="Get per-CO version history (latest first)",
+)
+async def get_co_item_history(
+    course_id: str,
+    co_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    co_result = await session.execute(
+        select(CourseOutcome).where(CourseOutcome.id == co_id, CourseOutcome.course_id == course_id)
+    )
+    co = co_result.scalar_one_or_none()
+    if not co:
+        raise HTTPException(status_code=404, detail="CO not found")
+    svc = CoGenerationService(session)
+    versions = await svc.get_co_item_history(course_id=course_id, co_code=co.code)
+    return {"course_id": course_id, "co_id": co_id, "co_code": co.code, "versions": versions, "count": len(versions)}
+
+
+class CORollbackRequest(BaseModel):
+    version_index: int = 0
+
+
+@router.post(
+    "/courses/{course_id}/outcomes/{co_id}/rollback",
+    summary="Rollback a CO to a previous version index",
+)
+async def rollback_course_outcome(
+    course_id: str,
+    co_id: str,
+    payload: CORollbackRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    lock = await _get_co_lock(course_id)
+    if _co_lock_blocks_for_user(lock, current_user):
+        raise HTTPException(status_code=409, detail="CO generation is locked for this course")
+    svc = CoGenerationService(session)
+    try:
+        co = await svc.rollback_co_to_version(course_id=course_id, co_id=co_id, version_index=int(payload.version_index))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await invalidate_course_report_cache(course_id)
+    return {
+        "id": co.id,
+        "course_id": co.course_id,
+        "code": co.code,
+        "statement": co.statement,
+        "bloom_level": _bloom_raw(co.bloom_level),
+        "status": "Rolled Back",
+    }
+
+
+# ── NBA SAR export (F3-16) ────────────────────────────────────────────────────
+
+@router.get("/courses/{course_id}/outcomes/export/nba-sar", summary="Export NBA SAR table as CSV (CO No, Statement, BT Level, PO levels, Attainment)")
+async def export_nba_sar(
+    course_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    course_result = await session.execute(select(Course).where(Course.id == course_id))
+    course = course_result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    svc = CoGenerationService(session)
+    csv_bytes = await svc.export_nba_sar(course_id)
+    filename = f"NBA_SAR_{course.course_code}_{course.course_name[:20].replace(' ', '_')}.csv"
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 @router.get("/courses/{course_id}/outcomes/export", summary="Export CO list as PDF or CSV draft (F3-29)")
 async def export_course_outcomes(
@@ -2819,35 +3178,64 @@ async def generate_course_outcomes(
     Optionally maps COs to provided POs and PSOs (strength 1/2/3).
     """
     lock = await _get_co_lock(course_id)
-    if lock.get("locked"):
+    if _co_lock_blocks_for_user(lock, current_user):
         raise HTTPException(status_code=409, detail="CO generation is locked for this course")
 
-    svc = CoGenerationService(session)
-    result = await svc.generate_cos_from_syllabus(
-        course_id=course_id,
-        syllabus=payload.syllabus,
-        program_outcomes=[po.model_dump() for po in payload.program_outcomes],
-        program_specific_outcomes=[pso.model_dump() for pso in payload.program_specific_outcomes],
-        num_cos=payload.num_cos,
-    )
-    cos_out = [
-        {
-            "id": co.id,
-            "code": co.code,
-            "statement": co.statement,
-            "bloom_level": str(co.bloom_level.value if hasattr(co.bloom_level, "value") else co.bloom_level),
+    try:
+        svc = CoGenerationService(session)
+        result = await svc.generate_cos_from_syllabus(
+            course_id=course_id,
+            syllabus=payload.syllabus,
+            program_outcomes=[po.model_dump() for po in payload.program_outcomes],
+            program_specific_outcomes=[pso.model_dump() for pso in payload.program_specific_outcomes],
+            num_cos=payload.num_cos,
+        )
+        cos_out = [
+            {
+                "id": co.id,
+                "code": co.code,
+                "statement": co.statement,
+                "bloom_level": str(co.bloom_level.value if hasattr(co.bloom_level, "value") else co.bloom_level),
+            }
+            for co in result["course_outcomes"]
+        ]
+        logger.info(f"Generated {len(cos_out)} COs for course {course_id}")
+        await _set_co_lock(course_id=course_id, locked=True, by=str(current_user.id), reason="COs saved from AI generation")
+        await invalidate_course_report_cache(course_id)
+
+        # Run matrix validation immediately after generation (non-fatal)
+        try:
+            validation = await validate_course_matrix_before_save(session, course_id)
+        except Exception as val_exc:
+            logger.warning(f"Matrix validation skipped after CO generation: {val_exc}")
+            validation = {"can_save": True, "errors": [], "warnings": [], "matrix_density": 0.0, "nonzero_cells": 0, "total_cells": 0}
+
+        return {
+            "total_cos": len(cos_out),
+            "course_outcomes": cos_out,
+            "co_po_mappings": result["co_po_mappings"],
+            "co_pso_mappings": result["co_pso_mappings"],
+            "domain": result.get("domain"),
+            "quality_warnings": result.get("quality_warnings", []),
+            "units": result.get("units", []),
+            "coverage": result.get("coverage", {}),
+            "mapping_justifications": result.get("mapping_justifications", {}),
+            "validation": {
+                "can_save": validation["can_save"],
+                "errors": validation["errors"],
+                "warnings": validation["warnings"],
+                "matrix_density": validation["matrix_density"],
+                "nonzero_cells": validation.get("nonzero_cells", 0),
+                "total_cells": validation.get("total_cells", 0),
+            },
         }
-        for co in result["course_outcomes"]
-    ]
-    logger.info(f"Generated {len(cos_out)} COs for course {course_id}")
-    await _set_co_lock(course_id=course_id, locked=True, by=str(current_user.id), reason="COs saved from AI generation")
-    await invalidate_course_report_cache(course_id)
-    return {
-        "total_cos": len(cos_out),
-        "course_outcomes": cos_out,
-        "co_po_mappings": result["co_po_mappings"],
-        "co_pso_mappings": result["co_pso_mappings"],
-    }
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"CO generation failed for course {course_id}: {str(e)}")
+        # If it's a known error like a validation error, return appropriate status
+        if "not found" in str(e).lower():
+            raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"CO Generation failed: {str(e)}")
 
 
 @router.get("/courses/{course_id}/co-lock-state", summary="Get CO lock state for a course")
@@ -3101,7 +3489,13 @@ async def add_exam_questions(
     """
     prepared_questions = [q.model_dump() for q in payload.questions]
     for q in prepared_questions:
-        has_override = bool(q.get("bloom_level") or q.get("co_mapped"))
+        has_override = bool(
+            q.get("bloom_level")
+            or q.get("co_mapped")
+            or q.get("co_ids")
+            or q.get("co_code")
+            or q.get("co_codes")
+        )
         if has_override and not (q.get("override_reason") or "").strip():
             raise HTTPException(status_code=400, detail="override_reason is required when overriding BT level or CO mapping")
 
@@ -3112,13 +3506,16 @@ async def add_exam_questions(
 
     question_meta = []
     for source_q, created_q in zip(prepared_questions, created):
+        requested_cos = source_q.get("co_mapped") or source_q.get("co_ids") or source_q.get("co_codes") or []
+        if not requested_cos and source_q.get("co_code"):
+            requested_cos = [source_q.get("co_code")]
         question_meta.append(
             {
                 "question_id": created_q.id,
                 "question_number": source_q.get("question_number"),
                 "part_label": source_q.get("part_label"),
                 "either_or_pair": source_q.get("either_or_pair"),
-                "co_mapped": source_q.get("co_mapped") or [],
+                "co_mapped": requested_cos,
                 "override_reason": source_q.get("override_reason"),
                 "co_suggestion": {
                     "confidence": float(created_q.bloom_confidence or 0.0),
@@ -3162,6 +3559,136 @@ async def add_exam_questions(
             }
             for q in created
         ],
+    }
+
+
+@router.post("/exams/{exam_id}/questions/upload-bulk", summary="Bulk upload questions from CSV/Excel/Document/ODF file")
+async def upload_questions_file(
+    exam_id: str,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload questions in bulk from CSV, Excel, DOC/DOCX, ODT/ODF, TXT, or ODS file.
+    
+    CSV Format:
+        question_text, marks, bloom_level, co_code
+        "What is...", 5, "understand", "CO1"
+        "Explain...", 10, "apply", "CO2"
+    
+    Excel/ODS Format: Same columns, can have multiple sheets
+
+    DOC/DOCX/ODT/ODF/TXT Format:
+        One question per paragraph/line.
+        Optional marks hints are supported, e.g. "What is X? (5 marks)"
+    
+    Returns: Count of questions added, extracted data preview, and any warnings
+    """
+    await _assert_faculty_owns_exam(session, current_user, exam_id)
+    
+    # Import file processing utilities
+    from app.core.utils.file_processor import (
+        parse_file_by_type, extract_question_data, validate_question_collection
+    )
+    
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    
+    try:
+        # Parse file
+        rows, file_format, metadata = await parse_file_by_type(
+            content,
+            file.filename or "",
+            allowed_extensions=("csv", "xlsx", "xls", "ods", "doc", "docx", "odt", "odf", "txt"),
+            content_type=file.content_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"File parsing failed: {str(e)}")
+    
+    # Extract question data from each row
+    extracted_questions = []
+    extraction_errors = []
+    
+    for idx, row in enumerate(rows, 1):
+        try:
+            q_data = extract_question_data(row)
+            if q_data:
+                extracted_questions.append(q_data)
+            else:
+                extraction_errors.append(f"Row {idx}: Row ignored (missing required fields)")
+        except Exception as e:
+            extraction_errors.append(f"Row {idx}: {str(e)}")
+    
+    # Validate extracted questions
+    is_valid, validation_msg, validated_qs = await validate_question_collection(extracted_questions)
+    
+    if not validated_qs:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No valid questions extracted. {validation_msg}\nErrors: " + 
+                   "; ".join(extraction_errors[:3])
+        )
+    
+    # Add questions via service
+    svc = QuestionAnalysisService(session)
+    created_questions = await svc.add_questions(
+        exam_id, 
+        validated_qs,
+        detect_bloom_with_llm=True
+    )
+
+    question_meta = []
+    for source_q, created_q in zip(validated_qs, created_questions):
+        requested_cos = source_q.get("co_mapped") or source_q.get("co_ids") or source_q.get("co_codes") or []
+        if not requested_cos and source_q.get("co_code"):
+            requested_cos = [source_q.get("co_code")]
+        question_meta.append(
+            {
+                "question_id": created_q.id,
+                "question_number": source_q.get("question_number"),
+                "part_label": source_q.get("part_label"),
+                "either_or_pair": source_q.get("either_or_pair"),
+                "co_mapped": requested_cos,
+                "override_reason": source_q.get("override_reason"),
+                "co_suggestion": {
+                    "confidence": float(created_q.bloom_confidence or 0.0),
+                    "reason": "Suggested from semantic similarity and bloom classification",
+                },
+            }
+        )
+    await _set_question_meta(exam_id, question_meta)
+    
+    # Update exam report caches
+    exam_result = await session.execute(select(Exam).where(Exam.id == exam_id))
+    exam = exam_result.scalar_one_or_none()
+    if exam:
+        await invalidate_course_report_cache(exam.course_id)
+        await invalidate_exam_preview_cache(exam_id)
+    
+    logger.info(f"Bulk uploaded {len(created_questions)} questions to exam {exam_id}")
+    
+    return {
+        "exam_id": exam_id,
+        "status": "success",
+        "file_format": file_format,
+        "file_metadata": metadata,
+        "questions_added": len(created_questions),
+        "questions_extracted": len(extracted_questions),
+        "questions_validated": len(validated_qs),
+        "validation_message": validation_msg,
+        "extraction_warnings": extraction_errors[:10],
+        "extraction_warnings_total": len(extraction_errors),
+        "sample_questions": [
+            {
+                "id": q.id,
+                "question_text": (q.question_text or "")[:80] + ("..." if len(q.question_text or "") > 80 else ""),
+                "marks": q.marks,
+                "bloom_level": str(q.bloom_level.value if hasattr(q.bloom_level, "value") else q.bloom_level),
+            }
+            for q in created_questions[:3]
+        ]
     }
 
 
@@ -3377,17 +3904,42 @@ async def upload_marks_file(
        S2         |  6 |  5 | 10 | 12
 
     Column headers Q1, Q2,... or 1, 2,... match question_number.
+    
+    Returns: Number of rows processed, students updated, and extraction metadata.
     """
     content = await file.read()
+    
+    # Get file processing metadata
+    from app.core.utils.file_processor import parse_file_by_type
+    try:
+        rows, file_format, metadata = await parse_file_by_type(content, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"File parsing failed: {str(e)}")
+    
+    # Process marks
     svc = QuestionAnalysisService(session)
     result = await svc.process_marks_file(exam_id, content, filename=file.filename or "")
+    
+    # Invalidate caches
     ex_result = await session.execute(select(Exam).where(Exam.id == exam_id))
     exam = ex_result.scalar_one_or_none()
     if exam:
         await invalidate_course_report_cache(exam.course_id)
         await invalidate_exam_preview_cache(exam_id)
+    
     logger.info(f"Marks file uploaded for exam {exam_id}: {result.get('rows_processed',0)} rows")
-    return {"exam_id": exam_id, "status": "success", **result}
+    
+    return {
+        "exam_id": exam_id,
+        "status": "success",
+        "file_format": file_format,
+        "file_metadata": metadata,
+        "rows_processed": result.get('rows_processed', result.get('rows_saved', 0)),
+        "rows_saved": result.get('rows_saved', result.get('rows_processed', 0)),
+        "students_updated": result.get('students_count', result.get('rows_processed', 0)),
+        "processing_result": result,
+    }
+
 
 
 @router.get("/exams/{exam_id}/marks", summary="Get all student marks for an exam")
@@ -3428,10 +3980,135 @@ async def get_exam_marks(
     }
 
 
+@router.post("/courses/{course_id}/co-attainment/upload-data", summary="Upload CO attainment data from CSV or Excel file")
+async def upload_attainment_data(
+    course_id: str,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload CO attainment data from CSV or Excel file.
+    
+    CSV Format:
+        co_code, attainment_percentage, attainment_level
+        CO1, 75.5, Level 3
+        CO2, 65.0, Level 2
+        CO3, 45.0, Level 1
+    
+    Returns: Count of attainment records created/updated and file metadata
+    """
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    
+    # Import utilities
+    from app.core.utils.file_processor import (
+        parse_file_by_type, extract_attainment_data
+    )
+    
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    
+    try:
+        # Parse file
+        rows, file_format, metadata = await parse_file_by_type(content, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"File parsing failed: {str(e)}")
+    
+    # Extract attainment data from each row
+    extracted_data = []
+    extraction_errors = []
+    co_map = {}  # Map CO codes to their IDs
+    
+    for idx, row in enumerate(rows, 1):
+        try:
+            att_data = extract_attainment_data(row)
+            if att_data:
+                extracted_data.append(att_data)
+            else:
+                extraction_errors.append(f"Row {idx}: Row ignored (missing required fields)")
+        except Exception as e:
+            extraction_errors.append(f"Row {idx}: {str(e)}")
+    
+    if not extracted_data:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No valid attainment records extracted. Errors: " + 
+                   "; ".join(extraction_errors[:3])
+        )
+    
+    # Get all COs for this course
+    co_result = await session.execute(
+        select(CourseOutcome).where(CourseOutcome.course_id == course_id)
+    )
+    cos = co_result.scalars().all()
+    co_map = {co.code: co.id for co in cos}
+    
+    # Process each attainment record
+    created_count = 0
+    updated_count = 0
+    skipped = []
+    
+    for att_rec in extracted_data:
+        co_code = att_rec.get('co_code')
+        
+        # Find CO
+        if co_code not in co_map:
+            skipped.append(f"CO {co_code} not found in course")
+            continue
+        
+        co_id = co_map[co_code]
+        
+        # Check if attainment record exists
+        from app.core.database.models import COAttainment
+        existing = await session.execute(
+            select(COAttainment).where(COAttainment.course_outcome_id == co_id)
+        )
+        co_att = existing.scalar_one_or_none()
+        
+        if co_att:
+            # Update existing
+            co_att.attainment_percentage = att_rec['attainment_percentage']
+            co_att.attainment_level = att_rec['attainment_level']
+            updated_count += 1
+        else:
+            # Create new
+            co_att = COAttainment(
+                id=str(uuid.uuid4()),
+                course_outcome_id=co_id,
+                attainment_percentage=att_rec['attainment_percentage'],
+                attainment_level=att_rec['attainment_level'],
+                calculated_at=datetime.utcnow()
+            )
+            session.add(co_att)
+            created_count += 1
+    
+    if created_count + updated_count > 0:
+        await session.commit()
+        await invalidate_course_report_cache(course_id)
+    
+    logger.info(f"Attainment data uploaded for course {course_id}: {created_count} created, {updated_count} updated")
+    
+    return {
+        "course_id": course_id,
+        "status": "success",
+        "file_format": file_format,
+        "file_metadata": metadata,
+        "records_processed": len(extracted_data),
+        "records_created": created_count,
+        "records_updated": updated_count,
+        "records_skipped": len(skipped),
+        "extraction_warnings": extraction_errors[:10],
+        "extraction_warnings_total": len(extraction_errors),
+        "skipped_details": skipped[:5],
+        "summary": f"Created {created_count}, updated {updated_count}, skipped {len(skipped)} CO attainment records"
+    }
+
+
 @router.get("/marks/{exam_id}/preview", summary="Live CO attainment preview from Redis cache")
 async def marks_preview(
     exam_id: str,
-    threshold_pct: float = Query(0.60),
+    threshold_pct: float = Query(0.40),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -3445,6 +4122,7 @@ async def marks_preview(
             "course_id": exam.course_id,
             "threshold_pct": threshold_pct,
             "preview": rows,
+            "attainments": rows,
             "count": len(rows),
         }
 
@@ -3484,7 +4162,7 @@ async def marks_submit(
 async def marks_approve(
     exam_id: str,
     program_id: str = Query(...),
-    threshold_pct: float = Query(0.60),
+    threshold_pct: float = Query(0.40),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -3559,6 +4237,120 @@ async def marks_unlock(
         action_link=f"/faculty/marks/{exam_id}",
     )
     return {"exam_id": exam_id, "status": "unlocked", "lock_removed": bool(deleted)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NBA FIXED POs + DEPARTMENT PSOs
+# ══════════════════════════════════════════════════════════════════════════════
+
+_NBA_POS = [
+    {"code": "PO1",  "name": "Engineering Knowledge",                          "statement": "Apply knowledge of mathematics, science, engineering fundamentals and an engineering specialisation to the solution of complex engineering problems.", "editable": False},
+    {"code": "PO2",  "name": "Problem Analysis",                                "statement": "Identify, formulate, review research literature, and analyse complex engineering problems reaching substantiated conclusions using first principles of mathematics, natural sciences and engineering sciences.", "editable": False},
+    {"code": "PO3",  "name": "Design/Development of Solutions",                 "statement": "Design solutions for complex engineering problems and design system components or processes that meet the specified needs with appropriate consideration for the public health and safety, and the cultural, societal, and environmental considerations.", "editable": False},
+    {"code": "PO4",  "name": "Conduct Investigations of Complex Problems",       "statement": "Use research-based knowledge and research methods including design of experiments, analysis and interpretation of data, and synthesis of the information to provide valid conclusions.", "editable": False},
+    {"code": "PO5",  "name": "Modern Tool Usage",                               "statement": "Create, select, and apply appropriate techniques, resources, and modern engineering and IT tools including prediction and modelling to complex engineering activities with an understanding of the limitations.", "editable": False},
+    {"code": "PO6",  "name": "The Engineer and Society",                        "statement": "Apply reasoning informed by the contextual knowledge to assess societal, health, safety, legal and cultural issues and the consequent responsibilities relevant to the professional engineering practice.", "editable": False},
+    {"code": "PO7",  "name": "Environment and Sustainability",                  "statement": "Understand the impact of the professional engineering solutions in societal and environmental contexts, and demonstrate the knowledge of, and need for sustainable development.", "editable": False},
+    {"code": "PO8",  "name": "Ethics",                                          "statement": "Apply ethical principles and commit to professional ethics and responsibilities and norms of the engineering practice.", "editable": False},
+    {"code": "PO9",  "name": "Individual and Team Work",                        "statement": "Function effectively as an individual, and as a member or leader in diverse teams, and in multidisciplinary settings.", "editable": False},
+    {"code": "PO10", "name": "Communication",                                   "statement": "Communicate effectively on complex engineering activities with the engineering community and with society at large, such as, being able to comprehend and write effective reports and design documentation, make effective presentations, and give and receive clear instructions.", "editable": False},
+    {"code": "PO11", "name": "Project Management and Finance",                  "statement": "Demonstrate knowledge and understanding of the engineering and management principles and apply these to one's own work, as a member and leader in a team, to manage projects and in multidisciplinary environments.", "editable": False},
+    {"code": "PO12", "name": "Life-long Learning",                              "statement": "Recognise the need for, and have the preparation and ability to engage in independent and life-long learning in the broadest context of technological change.", "editable": False},
+]
+
+
+@router.get("/nba/pos", summary="Get all 12 NBA standard Program Outcomes (fixed, read-only)")
+async def get_nba_pos(current_user: User = Depends(get_current_user)):
+    """
+    Returns the 12 fixed NBA POs.
+    These are seeded once at deployment and are NEVER editable by any user.
+    Rule: PO1-PO12 are permanently fixed by NBA across all engineering colleges.
+    """
+    return _NBA_POS
+
+
+@router.get("/nba/psos/{department}", summary="Get department PSOs (HOD-managed, read-only for faculty)")
+async def get_department_psos(
+    department: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns PSOs for a department.
+    Rule: PSOs are fixed per department — editable only by HOD role.
+    Faculty can only read them.
+    """
+    dept_key = f"DEPT:{department.strip().upper()}"
+    result = await session.execute(
+        select(ProgramSpecificOutcome)
+        .where(ProgramSpecificOutcome.program == dept_key)
+        .order_by(ProgramSpecificOutcome.code)
+    )
+    psos = result.scalars().all()
+    role = _role_value(current_user)
+    return [
+        {
+            "code": p.code,
+            "statement": p.statement,
+            "description": p.description,
+            "editable": role in {"admin", "hod"},
+        }
+        for p in psos
+    ]
+
+
+@router.put("/nba/psos/{department}/{pso_code}", summary="Update a department PSO (HOD/Admin only)")
+async def update_department_pso(
+    department: str,
+    pso_code: str,
+    payload: ProgramOutcomePayload,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update a department PSO.
+    Rule: Only HOD or Admin can edit PSOs.
+    Faculty attempting this will receive 403.
+    Warning: Changing PSO definition affects attainment reports for ALL courses in the department.
+    """
+    role = _role_value(current_user)
+    if role not in {"admin", "hod"}:
+        raise HTTPException(
+            status_code=403,
+            detail="PSOs are department-level definitions. Contact your HOD or Program Coordinator to update PSOs.",
+        )
+    dept_key = f"DEPT:{department.strip().upper()}"
+    result = await session.execute(
+        select(ProgramSpecificOutcome).where(
+            ProgramSpecificOutcome.program == dept_key,
+            ProgramSpecificOutcome.code == pso_code,
+        )
+    )
+    pso = result.scalar_one_or_none()
+    if not pso:
+        raise HTTPException(status_code=404, detail=f"PSO {pso_code} not found for department {department}")
+
+    pso.statement = payload.statement
+    pso.description = payload.description
+    await session.commit()
+
+    # Audit log
+    audit = AuditLog(
+        id=str(uuid.uuid4()),
+        entity_type="pso",
+        action=f"PSO {pso_code} updated for {department} by {current_user.username}",
+        user_id=str(current_user.id),
+        timestamp=datetime.utcnow(),
+    )
+    session.add(audit)
+    await session.commit()
+
+    return {
+        "code": pso.code,
+        "statement": pso.statement,
+        "description": pso.description,
+        "warning": "Changing PSO definition affects attainment reports for ALL courses in this department.",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3784,7 +4576,7 @@ async def delete_program_specific_outcome(
 @router.post("/map-co-po", summary="Semantic embedding-based CO → PO mapping")
 async def map_co_to_po(
     course_id: str = Query(...),
-    program_id: str = Query(...),
+    program_id: Optional[str] = Query(None),
     threshold: float = Query(0.3, description="Minimum similarity score (0-1)"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
@@ -3792,22 +4584,152 @@ async def map_co_to_po(
     """
     Uses Gemini embeddings to compute semantic similarity between COs and POs.
     Creates CO-PO mappings with similarity scores.
-    Similarity → mapping level: ≥0.75=3(strong), ≥0.50=2(medium), ≥0.30=1(weak)
+    Similarity → mapping level: ≥0.75=3(strong), ≥0.50=2(medium), ≥0.10=1(weak)
     """
     if _role_value(current_user) == "faculty":
         await _assert_faculty_owns_course(session, current_user, course_id)
 
     from app.modules.mapping.services.semantic_mapping_service import SemanticMappingService
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="po")
     svc = SemanticMappingService(session)
-    mappings = await svc.auto_map_cos_to_pos(course_id, program_id, threshold=threshold)
+    mappings = await svc.auto_map_cos_to_pos(course_id, resolved_program_id, threshold=threshold)
     logger.info(f"CO-PO mapping: {len(mappings)} for course {course_id}")
-    return {"mappings_created": len(mappings), "mappings": mappings}
+    return {
+        "mappings_created": len(mappings),
+        "mappings": mappings,
+        "requested_program_id": program_id,
+        "resolved_program_id": resolved_program_id,
+    }
+
+
+@router.post("/map-co-po/llm", summary="LLM-powered CO → PO mapping with reasoning (Gemini/OpenAI)")
+async def map_co_to_po_llm(
+    course_id: str = Query(...),
+    program_id: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Uses the configured LLM (Gemini/OpenAI/Ollama) to reason about CO-PO alignment.
+    For each CO the LLM assigns a level (0/1/2/3) to every PO with a justification.
+    Stores results as similarity_score = level/3.0 in co_po_mapping_table.
+    Falls back to semantic similarity if LLM is unavailable.
+    """
+    if _role_value(current_user) == "faculty":
+        await _assert_faculty_owns_course(session, current_user, course_id)
+
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="po")
+
+    # Load COs
+    cos_result = await session.execute(
+        select(CourseOutcome).where(CourseOutcome.course_id == course_id).order_by(CourseOutcome.code)
+    )
+    cos = list(cos_result.scalars().all())
+    if not cos:
+        raise HTTPException(status_code=404, detail="No course outcomes found for this course")
+
+    # Load POs
+    pos_result = await session.execute(
+        select(ProgramOutcome).where(ProgramOutcome.program == resolved_program_id).order_by(ProgramOutcome.code)
+    )
+    pos = list(pos_result.scalars().all())
+    if not pos:
+        raise HTTPException(status_code=404, detail="No program outcomes found")
+
+    from app.ai_engine.llm.llm_client import llm_client
+    from app.modules.mapping.services.semantic_mapping_service import SemanticMappingService
+    import json as _json
+
+    po_list_text = "\n".join(f"  {po.code}: {po.statement}" for po in pos)
+    all_mappings: List[Dict[str, Any]] = []
+    llm_used = False
+
+    for co in cos:
+        prompt = (
+            f"You are an OBE (Outcome-Based Education) expert for NBA accreditation.\n"
+            f"Course Outcome (CO):\n  {co.code}: {co.statement}\n\n"
+            f"Program Outcomes (POs):\n{po_list_text}\n\n"
+            f"For each PO, assign a correlation level:\n"
+            f"  3 = Strong (CO directly addresses this PO)\n"
+            f"  2 = Medium (CO partially addresses this PO)\n"
+            f"  1 = Weak (CO has minor relevance to this PO)\n"
+            f"  0 = None (no meaningful correlation)\n\n"
+            f"Return ONLY a JSON object mapping PO code to level integer, e.g.:\n"
+            f'{{"PO1": 3, "PO2": 1, "PO3": 0, ...}}\n'
+            f"Include ALL {len(pos)} POs. No explanation, just JSON."
+        )
+        co_levels: Dict[str, int] = {}
+        try:
+            llm_response = await llm_client.generate_completion(prompt)
+            if llm_response:
+                clean = llm_response.strip()
+                if clean.startswith("```"):
+                    clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                parsed = _json.loads(clean)
+                if isinstance(parsed, dict):
+                    co_levels = {k: max(0, min(3, int(v))) for k, v in parsed.items() if isinstance(v, (int, float))}
+                    llm_used = True
+        except Exception:
+            pass
+
+        if not co_levels:
+            # Fallback: semantic similarity — include all POs above threshold
+            try:
+                svc = SemanticMappingService(session)
+                for po in pos:
+                    sim = await svc._combined_similarity(co.statement, po.statement)
+                    lvl = 3 if sim >= 0.75 else (2 if sim >= 0.50 else (1 if sim >= 0.30 else 0))
+                    if lvl > 0:
+                        co_levels[po.code] = lvl
+            except Exception:
+                co_levels = {}
+
+        for po in pos:
+            lvl = co_levels.get(po.code, 0)
+            if lvl <= 0:
+                continue
+            all_mappings.append({
+                "course_outcome_id": co.id,
+                "program_outcome_id": po.id,
+                "similarity_score": round(lvl / 3.0, 6),
+                "co_code": co.code,
+                "po_code": po.code,
+                "level": lvl,
+            })
+
+    # Persist to DB
+    co_ids = [co.id for co in cos]
+    await session.execute(
+        co_po_mapping_table.delete().where(co_po_mapping_table.c.course_outcome_id.in_(co_ids))
+    )
+    if all_mappings:
+        await session.execute(
+            co_po_mapping_table.insert().values([
+                {
+                    "course_outcome_id": m["course_outcome_id"],
+                    "program_outcome_id": m["program_outcome_id"],
+                    "similarity_score": m["similarity_score"],
+                }
+                for m in all_mappings
+            ])
+        )
+    await session.commit()
+    await invalidate_course_report_cache(course_id)
+
+    logger.info(f"LLM CO-PO mapping: {len(all_mappings)} for course {course_id}, llm_used={llm_used}")
+    return {
+        "mappings_created": len(all_mappings),
+        "mappings": all_mappings,
+        "resolved_program_id": resolved_program_id,
+        "llm_used": llm_used,
+        "method": "llm" if llm_used else "semantic_fallback",
+    }
 
 
 @router.post("/map-co-pso", summary="Semantic embedding-based CO → PSO mapping")
 async def map_co_to_pso(
     course_id: str = Query(...),
-    program_id: str = Query(...),
+    program_id: Optional[str] = Query(None),
     threshold: float = Query(0.3),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
@@ -3816,11 +4738,19 @@ async def map_co_to_pso(
         await _assert_faculty_owns_course(session, current_user, course_id)
 
     from app.modules.mapping.services.semantic_mapping_service import SemanticMappingService
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="pso")
     svc = SemanticMappingService(session)
-    result = await svc.map_cos_to_psos(session, course_id, program_id, threshold=threshold)
+    result = await svc.map_cos_to_psos(session, course_id, resolved_program_id, threshold=threshold)
+    if not result.get("success", False):
+        raise HTTPException(status_code=400, detail=result.get("message") or result.get("error") or "Failed to map CO to PSO")
     mappings = result.get("mappings", [])
     logger.info(f"CO-PSO mapping: {len(mappings)} for course {course_id}")
-    return {"mappings_created": len(mappings), "mappings": mappings}
+    return {
+        "mappings_created": len(mappings),
+        "mappings": mappings,
+        "requested_program_id": program_id,
+        "resolved_program_id": resolved_program_id,
+    }
 
 
 @router.get("/mapping/graph/co/{co_id}/po-impact", summary="Get CO to PO impact path from Neo4j graph")
@@ -3841,85 +4771,200 @@ async def get_co_po_impact_path(
 # ATTAINMENT CALCULATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/attainment/calculate-co", summary="Calculate CO attainment (threshold-based) for one exam")
-async def calculate_co_attainment(
+@router.post("/attainment/indirect", summary="Set indirect CO attainment from survey data (NBA 80/20 blend)")
+async def set_indirect_co_attainment(
     course_id: str = Query(...),
-    exam_id:   str = Query(...),
-    threshold_pct: float = Query(0.60, description="Students must score >= threshold*max_marks to clear CO"),
+    co_id: str = Query(...),
+    survey_avg: float = Query(..., description="Mean Likert score (e.g. 3.8)"),
+    scale: float = Query(5.0, description="Max scale value (default 5)"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     """
-    OBE standard CO attainment:
-      threshold_marks = threshold_pct × max_marks_for_CO_questions
-      CO_att = (students_cleared / total_students) × 100
-
-    Level 3 ≥ 70%, Level 2 ≥ 60%, Level 1 < 60%
+    Store indirect CO attainment from exit survey / course-end feedback.
+    NBA mandates: Final_CO = Direct*0.80 + Indirect*0.20
+    survey_avg is the mean Likert score on a `scale`-point scale.
+    Indirect% = (survey_avg / scale) * 100
     """
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    svc = AttainmentService(session)
+    result = await svc.set_indirect_attainment(course_id, co_id, survey_avg, scale)
+    return {"status": "saved", **result}
+
+
+@router.get("/attainment/indirect/{course_id}", summary="Get all indirect CO attainment survey data for a course")
+async def get_indirect_co_attainments(
+    course_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    cos_result = await session.execute(select(CourseOutcome.id, CourseOutcome.code).where(CourseOutcome.course_id == course_id))
+    cos = cos_result.all()
+    svc = AttainmentService(session)
+    items = []
+    for co_id, co_code in cos:
+        indirect = await svc._get_indirect_attainment(course_id, co_id)
+        items.append({"co_id": co_id, "co_code": co_code, "indirect_pct": indirect, "has_survey": indirect is not None})
+    return {"course_id": course_id, "items": items}
+
+
+@router.get("/attainment/gap-analysis/{course_id}", summary="CO/PO gap analysis — achieved vs target level")
+async def get_gap_analysis(
+    course_id: str,
+    threshold_pct: float = Query(0.40),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns COs and POs that are below their target level.
+    CO target level is configurable (default Level 2).
+    Includes remedial action recommendations.
+    """
+    await _assert_faculty_owns_course(session, current_user, course_id)
+    svc = AttainmentService(session)
+    weighted = await svc.calculate_weighted_co_attainments(course_id, threshold_pct)
+    summary = await svc.get_course_attainment_summary(course_id)
+    gap_cos = [c for c in weighted if c.get("gap_flag")]
+    gap_pos = [p for p in summary.get("po_attainments", []) if p.get("attainment_level") == "Level 1"]
+    return {
+        "course_id": course_id,
+        "gap_cos": gap_cos,
+        "gap_pos": gap_pos,
+        "total_gap_cos": len(gap_cos),
+        "total_gap_pos": len(gap_pos),
+        "action_required": len(gap_cos) > 0 or len(gap_pos) > 0,
+        "recommendations": [
+            {
+                "co_code": c["co_code"],
+                "achieved_level": c["attainment_level"],
+                "target_level": c["target_level"],
+                "attainment_pct": c["attainment_percentage"],
+                "action": c.get("gap_action", "Remedial action required"),
+            }
+            for c in gap_cos
+        ],
+    }
+
+
+@router.get("/attainment/matrix/{course_id}", summary="Get CO-PO correlation matrix for a course")
+async def get_co_po_matrix(
+    course_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns the CO-PO matrix with integer levels 0-3 derived from stored similarity scores.
+    Level thresholds: sim>=0.75 → 3, sim>=0.50 → 2, sim>=0.10 → 1, else 0.
+    """
+    course = await _assert_faculty_owns_course(session, current_user, course_id)
+    svc = AttainmentService(session)
+    matrix = await svc.get_co_po_matrix(course.id)
+    return matrix
+
+
+@router.get("/attainment/students/{course_id}", summary="Get per-student CO attainment breakdown")
+async def get_student_performance(
+    course_id: str,
+    exam_id: Optional[str] = Query(None),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    course = await _assert_faculty_owns_course(session, current_user, course_id)
+    svc = AttainmentService(session)
+    rows = await svc.get_student_performance(course.id, exam_id)
+    return {"course_id": course.id, "students": rows, "total": len(rows)}
+
+
+@router.post("/attainment/calculate-co", summary="Calculate CO attainment (threshold-based) for one exam")
+async def calculate_co_attainment(
+    course_id: str = Query(...),
+    exam_id:   str = Query(...),
+    threshold_pct: float = Query(0.40, description="Students must score >= threshold*max_marks to clear CO"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     svc = AttainmentService(session)
     attainments = await svc.calculate_course_outcome_attainments(
         course_id, exam_id, threshold_pct=threshold_pct
     )
     logger.info(f"CO attainment for course {course_id}, exam {exam_id}")
-    return {"course_id": course_id, "exam_id": exam_id, "attainments": attainments}
+    return {
+        "course_id": course_id,
+        "exam_id": exam_id,
+        "attainments": attainments,
+        "co_attainments": attainments,
+    }
 
 
 @router.get("/attainment/weighted/{course_id}", summary="Weighted CO attainment across all exams")
 async def get_weighted_co_attainment(
     course_id: str,
-    threshold_pct: float = Query(0.60),
+    threshold_pct: float = Query(0.40),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Aggregates CO attainment from all exams with exam-type weights:
-    end_term=60, mid_term=20, T1-T5=5, practical=15, assignment=5
-    """
     svc = AttainmentService(session)
     result = await svc.calculate_weighted_co_attainments(course_id, threshold_pct)
-    return {"course_id": course_id, "weighted_attainments": result}
+    return {
+        "course_id": course_id,
+        # expose under all keys the frontend may read
+        "weighted_attainments": result,
+        "attainments": result,
+        "co_attainments": result,
+    }
 
 
 @router.post("/attainment/calculate-po", summary="Calculate PO attainment from CO-PO mappings")
 async def calculate_po_attainment(
     course_id:  str = Query(...),
-    program_id: str = Query(...),
+    program_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    PO_att = Σ(CO_att × mapping_level) / Σ(mapping_level)
-    Requires CO attainments to be computed first.
-    """
     if _role_value(current_user) == "faculty":
         await _assert_faculty_owns_course(session, current_user, course_id)
 
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="po")
     svc = AttainmentService(session)
-    attainments = await svc.calculate_program_outcome_attainments(course_id, program_id)
+    attainments = await svc.calculate_program_outcome_attainments(course_id, resolved_program_id)
     logger.info(f"PO attainment for course {course_id}")
-    return {"course_id": course_id, "program_id": program_id, "attainments": attainments}
+    return {
+        "course_id": course_id,
+        "program_id": resolved_program_id,
+        "requested_program_id": program_id,
+        "attainments": attainments,
+        "po_attainments": attainments,
+    }
 
 
 @router.post("/attainment/calculate-pso", summary="Calculate PSO attainment from CO-PSO mappings")
 async def calculate_pso_attainment(
     course_id:  str = Query(...),
-    program_id: str = Query(...),
+    program_id: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     if _role_value(current_user) == "faculty":
         await _assert_faculty_owns_course(session, current_user, course_id)
 
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="pso")
     svc = AttainmentService(session)
-    attainments = await svc.calculate_pso_attainments(course_id, program_id)
-    return {"course_id": course_id, "program_id": program_id, "attainments": attainments}
+    attainments = await svc.calculate_pso_attainments(course_id, resolved_program_id)
+    return {
+        "course_id": course_id,
+        "program_id": resolved_program_id,
+        "requested_program_id": program_id,
+        "attainments": attainments,
+        "pso_attainments": attainments,
+    }
 
 
 @router.post("/attainment/full-pipeline", summary="Run the complete OBE attainment pipeline")
 async def run_full_attainment_pipeline(
     course_id:     str   = Query(...),
-    program_id:    str   = Query(...),
-    threshold_pct: float = Query(0.60, description="CO attainment threshold (0-1)"),
+    program_id:    Optional[str] = Query(None),
+    threshold_pct: float = Query(0.40, description="CO attainment threshold (0-1)"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -3932,8 +4977,11 @@ async def run_full_attainment_pipeline(
     5. CO-PO correlation matrix
     6. Summary statistics
     """
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="po")
     svc = AttainmentService(session)
-    result = await svc.run_full_attainment_pipeline(course_id, program_id, threshold_pct)
+    result = await svc.run_full_attainment_pipeline(course_id, resolved_program_id, threshold_pct)
+    result["program_id"] = resolved_program_id
+    result["requested_program_id"] = program_id
     logger.info(f"Full attainment pipeline complete for course {course_id}")
     return result
 
@@ -3941,17 +4989,20 @@ async def run_full_attainment_pipeline(
 @router.post("/attainment/full-pipeline/async", summary="Queue full attainment pipeline via Celery")
 async def queue_full_attainment_pipeline(
     course_id:     str   = Query(...),
-    program_id:    str   = Query(...),
-    threshold_pct: float = Query(0.60, description="CO attainment threshold (0-1)"),
+    program_id:    Optional[str] = Query(None),
+    threshold_pct: float = Query(0.40, description="CO attainment threshold (0-1)"),
+    session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    task = run_full_pipeline_task.delay(course_id, program_id, threshold_pct)
+    resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="po")
+    task = run_full_pipeline_task.delay(course_id, resolved_program_id, threshold_pct)
     logger.info(f"Queued attainment pipeline task {task.id} for course {course_id}")
     return {
         "task_id": task.id,
         "status": "queued",
         "course_id": course_id,
-        "program_id": program_id,
+        "program_id": resolved_program_id,
+        "requested_program_id": program_id,
         "threshold_pct": threshold_pct,
     }
 
@@ -3980,38 +5031,124 @@ async def get_course_attainment(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    await _assert_faculty_owns_course(session, current_user, course_id)
+    course = await _assert_faculty_owns_course(session, current_user, course_id)
     svc = AttainmentService(session)
-    return await svc.get_course_attainment_summary(course_id)
+    summary = await svc.get_course_attainment_summary(course.id)
+    # normalise: expose co_attainments under both keys the frontend reads
+    co_rows = summary.get("co_attainments", [])
+    po_rows = summary.get("po_attainments", [])
+    return {
+        **summary,
+        "attainments": co_rows,
+        "co_attainments": co_rows,
+        "po_attainments": po_rows,
+    }
 
 
-@router.get("/attainment/matrix/{course_id}", summary="CO × PO correlation matrix")
-async def get_co_po_matrix(
+@router.get("/courses/{course_id}/obe-workflow-v1", summary="Legacy NBA OBE workflow — CO/PO attainment with formulas")
+async def get_obe_workflow_v1(
     course_id: str,
+    threshold_pct: float = Query(0.40),
+    fa_method: str = Query("best_n_of_m"),
+    fa_best_n: int = Query(3),
+    fa_weight: float = Query(0.40),
+    sa_weight: float = Query(0.60),
+    direct_weight: float = Query(0.80),
+    indirect_weight: float = Query(0.20),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Returns the CO×PO mapping matrix.
-    Cell value: 3(strong ≥0.75), 2(medium ≥0.50), 1(weak ≥0.30), 0(none)
-    """
-    await _assert_faculty_owns_course(session, current_user, course_id)
+    """Returns the full NBA-compliant OBE workflow data for the CO Attainment page."""
+    course = await _assert_faculty_owns_course(session, current_user, course_id)
+    resolved_course_id = course.id
     svc = AttainmentService(session)
-    return await svc.get_co_po_matrix(course_id)
 
+    weighted_cos = await svc.calculate_weighted_co_attainments(resolved_course_id, threshold_pct)
+    summary_data = await svc.get_course_attainment_summary(resolved_course_id)
+    po_rows = summary_data.get("po_attainments", [])
 
-@router.get("/attainment/students/{course_id}", summary="Per-student performance analytics")
-async def get_student_performance(
-    course_id: str,
-    exam_id: Optional[str] = Query(None),
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-):
-    """Students ranked by percentage with per-CO breakdown and letter grade."""
-    await _assert_faculty_owns_course(session, current_user, course_id)
-    svc = AttainmentService(session)
-    data = await svc.get_student_performance(course_id, exam_id)
-    return {"course_id": course_id, "count": len(data), "students": data}
+    # Build per-CO rows in the shape the page expects
+    co_attainments = []
+    for co in weighted_cos:
+        direct = co.get("direct_attainment_percentage", 0.0)
+        indirect = co.get("indirect_attainment_percentage")
+        final = co.get("attainment_percentage", 0.0)
+        has_indirect = co.get("has_indirect", False)
+        gap = co.get("gap_flag", False)
+        level = co.get("attainment_level", "Level 1")
+
+        fa_formula = f"FA = best {fa_best_n} of FA exams, avg × FA weight"
+        sa_formula = f"SA = end-term attainment × SA weight"
+        direct_formula = f"Direct = FA×{fa_weight} + SA×{sa_weight}"
+        final_formula = (
+            f"Final = Direct×{direct_weight} + Indirect×{indirect_weight}"
+            if has_indirect else f"Final = Direct (no indirect survey data)"
+        )
+
+        co_attainments.append({
+            "co_code": co.get("co_code") or co.get("code"),
+            "co_statement": co.get("co_statement") or co.get("statement"),
+            "bloom_level": co.get("bloom_level"),
+            "fa_att": round(direct, 1),
+            "sa_att": None,
+            "direct_att": round(direct, 1),
+            "indirect_att": round(indirect, 1) if indirect is not None else None,
+            "final_att": round(final, 1),
+            "attainment_level": level,
+            "attainment_percentage": round(final, 2),
+            "gap_flag": gap,
+            "has_indirect": has_indirect,
+            "target_level": co.get("target_level", 2),
+            "status": "CAP Required ✗" if gap else "Attained ✓",
+            "cap_action": co.get("gap_action") if gap else None,
+            "fa_formula": fa_formula,
+            "sa_formula": sa_formula,
+            "direct_formula": direct_formula,
+            "final_formula": final_formula,
+        })
+
+    cos_attained = sum(1 for c in co_attainments if not c["gap_flag"])
+    cos_gap = sum(1 for c in co_attainments if c["gap_flag"])
+    avg_final = (
+        sum(c["final_att"] for c in co_attainments) / len(co_attainments)
+        if co_attainments else 0.0
+    )
+
+    # Determine overall level
+    s = get_settings()
+    l3 = getattr(s, "attainment_level_3_threshold", 0.60) * 100
+    l2 = getattr(s, "attainment_level_2_threshold", 0.50) * 100
+    overall_level = "Level 3" if avg_final >= l3 else ("Level 2" if avg_final >= l2 else "Level 1")
+
+    return {
+        "course_id": resolved_course_id,
+        "requested_course": course_id,
+        "co_attainments": co_attainments,
+        "po_attainments": po_rows,
+        "config": {
+            "threshold_pct": int(threshold_pct * 100),
+            "fa_method": fa_method,
+            "fa_best_n": fa_best_n,
+            "fa_weight": fa_weight,
+            "sa_weight": sa_weight,
+            "direct_weight": direct_weight,
+            "indirect_weight": indirect_weight,
+        },
+        "nba_formulas": {
+            "co_attainment": f"CO_att = (students_cleared / total_students) × 100",
+            "fa_blend": f"FA = best {fa_best_n} of FA exams (T1-T5), simple avg",
+            "direct_blend": f"Direct = FA×{fa_weight} + SA×{sa_weight}",
+            "final_blend": f"Final = Direct×{direct_weight} + Indirect×{indirect_weight} (NBA 80:20)",
+            "po_attainment": "PO_att = Σ(CO_att × mapping_level) / Σ(mapping_level)",
+        },
+        "summary": {
+            "total_cos": len(co_attainments),
+            "cos_attained": cos_attained,
+            "cos_gap": cos_gap,
+            "avg_final_attainment": round(avg_final, 2),
+            "overall_level": overall_level,
+        },
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4053,10 +5190,23 @@ async def generate_report(
     current_user: User = Depends(get_current_user),
 ):
     await _assert_faculty_owns_course(session, current_user, course_id)
+    matrix_validation = await validate_course_matrix_before_save(session, course_id)
+    if not matrix_validation.get("can_save", False):
+        raise HTTPException(status_code=400, detail={
+            "message": "Cannot generate report because matrix has hard validation errors",
+            "errors": matrix_validation.get("errors", []),
+            "warnings": matrix_validation.get("warnings", []),
+        })
+
     svc = AttainmentService(session)
     report = await svc.generate_report(course_id, report_type, current_user.id)
     logger.info(f"Report generated: {report.id}")
-    return {"status": "success", "report_id": report.id, "generated_at": datetime.utcnow()}
+    return {
+        "status": "success",
+        "report_id": report.id,
+        "generated_at": datetime.utcnow(),
+        "matrix_warnings": matrix_validation.get("warnings", []),
+    }
 
 
 @router.get("/reports/status/{job_id}", summary="Get report generation task status")
@@ -4185,6 +5335,55 @@ async def chatbot_message(
     - Course information queries
     """
     user_id = str(current_user.id)
+    role = _role_value(current_user)
+    message_text = (payload.message or payload.text or "").strip()
+    if not message_text:
+        raise HTTPException(status_code=400, detail="message or text is required")
+
+    # New deterministic three-message architecture
+    if payload.message_number in {1, 2, 3}:
+        session_token = payload.session_id or str(uuid.uuid4())
+        three_flow = ThreeMessageFlowService(session=session, user_id=user_id, user_role=role)
+        response = await three_flow.process_message(
+            text=message_text,
+            session_id=session_token,
+            message_number=payload.message_number,
+            course_id=payload.course_id,
+        )
+        live_state = await three_flow._load_state(session_token)
+        from app.agents.langgraph_workflow import _fmt_wizard_status
+
+        response["reply"] = _fmt_wizard_status(response)
+        response["session_id"] = response.get("session_id") or session_token
+
+        course_scope_id = (
+            live_state.get("course_db_id")
+            or response.get("db_course_id")
+            or response.get("course_db_id")
+            or payload.course_id
+        )
+        if course_scope_id:
+            safe_response = json.loads(json.dumps(response, default=str))
+            safe_live_state = json.loads(json.dumps(live_state, default=str))
+            await _safe_set_json(
+                f"chatbot_state:{current_user.id}:{course_scope_id}",
+                {
+                    "course_id": course_scope_id,
+                    "step": safe_live_state.get("stage") or safe_response.get("status") or "course_info",
+                    "session_data": {
+                        "session_id": session_token,
+                        "workflow_step": safe_response.get("workflow_step"),
+                        "status": safe_response.get("status"),
+                        "three_flow": safe_response,
+                        "live_state": safe_live_state,
+                    },
+                    "updated_at": _now_iso(),
+                },
+                ttl_seconds=86400,
+            )
+        logger.info(f"Chatbot three-flow status={response.get('status')} user={user_id}")
+        return response
+
     if payload.course_id:
         await _assert_faculty_owns_course(session, current_user, payload.course_id)
 
@@ -4200,7 +5399,7 @@ async def chatbot_message(
     from app.services.chatbot_service import ChatbotService
     svc = ChatbotService(session)
     response = await svc.process_message(
-        message=payload.message,
+        message=message_text,
         course_id=payload.course_id,
         session_id=payload.session_id,
         user_id=user_id,
@@ -4208,6 +5407,56 @@ async def chatbot_message(
     )
     logger.info(f"Chatbot intent={response.get('intent')} user={user_id}")
     return response
+
+
+@router.post("/chatbot/validate_matrix", summary="Validate CO-PO matrix with hard/soft rules")
+async def chatbot_validate_matrix(
+    payload: ChatbotValidateMatrixRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    user_id = str(current_user.id)
+    state_key = ThreeMessageFlowService._session_key(user_id, payload.session_id)
+    state = await _safe_get_json(state_key)
+
+    course_db_id = (state or {}).get("course_db_id")
+    if not course_db_id and payload.course_id:
+        course_result = await session.execute(
+            select(Course).where((Course.id == payload.course_id) | (Course.course_code == payload.course_id))
+        )
+        found = course_result.scalar_one_or_none()
+        course_db_id = found.id if found else None
+
+    if not course_db_id:
+        raise HTTPException(status_code=400, detail="Unable to resolve course for matrix validation")
+
+    await _assert_faculty_owns_course(session, current_user, course_db_id)
+
+    co_rows = (await session.execute(
+        select(CourseOutcome).where(CourseOutcome.course_id == course_db_id).order_by(CourseOutcome.code)
+    )).scalars().all()
+    cos = [{"id": co.code, "statement": co.statement} for co in co_rows]
+
+    course_result = await session.execute(select(Course).where(Course.id == course_db_id))
+    course = course_result.scalar_one_or_none()
+    dept_key = f"DEPT:{((course.department or 'General').strip() or 'General').upper()}" if course else "DEPT:GENERAL"
+
+    po_rows = (await session.execute(
+        select(ProgramOutcome).where(ProgramOutcome.program == dept_key).order_by(ProgramOutcome.code)
+    )).scalars().all()
+
+    if po_rows:
+        pos = [{"id": po.code, "statement": po.statement} for po in po_rows]
+    else:
+        po_ids = sorted({
+            key.split("_", 1)[1]
+            for key in payload.mapping.keys()
+            if isinstance(key, str) and "_" in key
+        })
+        pos = [{"id": po_id, "statement": po_id} for po_id in po_ids]
+
+    result = validate_matrix(cos=cos, pos=pos, mapping_matrix=payload.mapping)
+    return result
 
 
 @router.get("/chatbot/sessions/{course_id}/state", summary="Get chatbot stepwise state for faculty course")
@@ -4238,14 +5487,22 @@ async def update_chatbot_session_state(
     current_user: User = Depends(get_current_user),
 ):
     await _assert_faculty_owns_course(session, current_user, course_id)
-    allowed_steps = {"course_info", "syllabus", "po_pso_confirm", "co_count", "generate", "review", "save"}
-    if step not in allowed_steps:
-        raise HTTPException(status_code=400, detail="Invalid chatbot step")
-
     key = f"chatbot_state:{current_user.id}:{course_id}"
+    current_payload = await _safe_get_json(key) or {
+        "course_id": course_id,
+        "step": "course_info",
+        "session_data": {},
+        "updated_at": _now_iso(),
+    }
+    if step != current_payload.get("step", "course_info"):
+        raise HTTPException(
+            status_code=409,
+            detail="Manual chatbot step changes are disabled. Progress through the guided workflow in order or reset the session.",
+        )
+
     payload = {
         "course_id": course_id,
-        "step": step,
+        "step": current_payload.get("step", "course_info"),
         "session_data": session_data,
         "updated_at": _now_iso(),
     }
@@ -4351,6 +5608,265 @@ async def search_questions(
         source = "database"
 
     return {"query": payload.query, "count": len(hits), "source": source, "hits": hits}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OBE FULL WORKFLOW STATE (NBA formula-transparent endpoint)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/courses/{course_id}/obe-workflow", summary="Full NBA-compliant OBE workflow state with all intermediate values")
+async def get_obe_workflow(
+    course_id: str,
+    threshold_pct: float = Query(0.40, description="CO pass threshold (0.40=40%, 0.50=50%, 0.60=60%)"),
+    fa_method: str = Query("best_n_of_m", description="FA method: best_n_of_m | simple_avg | weighted"),
+    fa_best_n: int = Query(3, description="N for Best-N-of-M (default 3)"),
+    fa_weight: float = Query(0.40, description="FA weight in Direct blend (default 0.40)"),
+    sa_weight: float = Query(0.60, description="SA weight in Direct blend (default 0.60)"),
+    direct_weight: float = Query(0.80, description="Direct weight in Final blend (default 0.80)"),
+    indirect_weight: float = Query(0.20, description="Indirect weight in Final blend (default 0.20)"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Returns the complete NBA OBE calculation state for a course with ALL intermediate values:
+    - Per-exam CO attainment (threshold-based pass count)
+    - FA attainment (Best-N-of-M / simple avg / weighted)
+    - SA attainment
+    - Direct CO attainment (FA*fa_weight + SA*sa_weight)
+    - Indirect CO attainment (from survey Redis data)
+    - Final CO attainment (Direct*0.80 + Indirect*0.20)
+    - CO level classification (L1/L2/L3) and gap analysis
+    - PO/PSO attainment (weighted by mapping level)
+    - Full formula strings for each calculation step
+    """
+    course = await _assert_faculty_owns_course(session, current_user, course_id)
+    resolved_course_id = course.id
+
+    # ── Load course, COs, exams ──────────────────────────────────────────────
+    course_r = await session.execute(select(Course).where(Course.id == resolved_course_id))
+    course = course_r.scalar_one_or_none()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    cos_r = await session.execute(
+        select(CourseOutcome).where(CourseOutcome.course_id == resolved_course_id).order_by(CourseOutcome.code)
+    )
+    cos = list(cos_r.scalars().all())
+
+    exams_r = await session.execute(select(Exam).where(Exam.course_id == resolved_course_id).order_by(Exam.created_at))
+    exams = list(exams_r.scalars().all())
+
+    from app.modules.attainment_engine.services.attainment_service import AttainmentService, _level, _EXAM_WEIGHTS, _FA_KEYS, _SA_KEYS, _is_fa_exam, _level_thresholds_live
+    svc = AttainmentService(session)
+    live_thresholds = await _level_thresholds_live()
+    l3_pct, l2_pct = live_thresholds  # e.g. (60.0, 50.0)
+
+    # ── Step A: Per-exam CO attainment ───────────────────────────────────────
+    _FA_WEIGHTED_KEYS = {"t1": 0.10, "t2": 0.15, "t3": 0.20, "t4": 0.25, "t5": 0.30}
+    per_exam_results: List[Dict] = []
+    co_exam_matrix: Dict[str, Dict[str, float]] = {co.code: {} for co in cos}
+    co_exam_entries: Dict[str, List[Dict[str, Any]]] = {co.code: [] for co in cos}
+
+    for exam in exams:
+        etype = str(exam.exam_type.value if hasattr(exam.exam_type, "value") else exam.exam_type).lower().replace("-", "_").replace(" ", "_")
+        is_sa = etype in _SA_KEYS
+        is_fa = _is_fa_exam(etype)
+        exam_weight = _EXAM_WEIGHTS.get(etype, 60.0 if is_sa else 10.0)
+
+        att_list = await svc.calculate_course_outcome_attainments(resolved_course_id, exam.id, threshold_pct)
+        exam_entry = {
+            "exam_id": exam.id,
+            "exam_name": exam.exam_name,
+            "exam_type": etype,
+            "weight": exam_weight,
+            "is_fa": is_fa,
+            "is_sa": is_sa,
+            "co_attainments": att_list,
+            "formula": f"CO_att% = (students_scoring >= {int(threshold_pct*100)}% of CO_max_marks) / total_students × 100",
+        }
+        per_exam_results.append(exam_entry)
+        for att in att_list:
+            co_code = att.get("co_code") or att.get("code", "")
+            if not co_code or att.get("not_assessed"):
+                continue
+            att_pct = float(att.get("attainment_percentage", 0.0) or 0.0)
+            co_exam_matrix.setdefault(co_code, {})[etype] = att_pct
+            co_exam_entries.setdefault(co_code, []).append({
+                "exam_type": etype,
+                "attainment": att_pct,
+                "weight": exam_weight,
+                "is_fa": is_fa,
+                "is_sa": is_sa,
+            })
+
+    # ── Step B: FA attainment per CO ─────────────────────────────────────────
+    fa_results: Dict[str, Dict] = {}
+    for co in cos:
+        entries = co_exam_entries.get(co.code, [])
+        fa_entries = [e for e in entries if _is_fa_exam(str(e.get("exam_type", "")))]
+        fa_scores_clean = [float(e.get("attainment", 0.0) or 0.0) for e in fa_entries]
+
+        if fa_method == "best_n_of_m" and fa_scores_clean:
+            best = sorted(fa_scores_clean, reverse=True)[:fa_best_n]
+            fa_att = sum(best) / len(best)
+            formula = f"FA = avg(top {fa_best_n} of {len(fa_scores_clean)} FA scores) = avg({', '.join(f'{v:.1f}' for v in best)}) = {fa_att:.2f}%"
+        elif fa_method == "weighted" and fa_entries:
+            # Prefer explicit T1-T5 weights when available; otherwise use exam weights.
+            if all(str(e.get("exam_type", "")) in _FA_WEIGHTED_KEYS for e in fa_entries):
+                fa_att = sum(_FA_WEIGHTED_KEYS[str(e.get("exam_type", ""))] * float(e.get("attainment", 0.0) or 0.0) for e in fa_entries)
+                formula = "FA = 0.10×T1 + 0.15×T2 + 0.20×T3 + 0.25×T4 + 0.30×T5"
+            else:
+                total_w = sum(float(e.get("weight", 0.0) or 0.0) for e in fa_entries)
+                fa_att = (
+                    sum((float(e.get("weight", 0.0) or 0.0) * float(e.get("attainment", 0.0) or 0.0)) for e in fa_entries) / total_w
+                ) if total_w > 0 else 0.0
+                formula = "FA = Σ(FA_exam_att × exam_weight) / Σ(exam_weight)"
+        elif fa_scores_clean:
+            fa_att = sum(fa_scores_clean) / len(fa_scores_clean)
+            formula = f"FA = ({' + '.join(f'{v:.1f}' for v in fa_scores_clean)}) / {len(fa_scores_clean)} = {fa_att:.2f}%"
+        else:
+            fa_att = 0.0
+            formula = "FA = 0% (no FA exams found)"
+
+        fa_results[co.code] = {"fa_att": round(fa_att, 2), "fa_scores": fa_scores_clean, "formula": formula, "method": fa_method}
+
+    # ── Step C: SA attainment per CO ─────────────────────────────────────────
+    sa_results: Dict[str, Dict] = {}
+    for co in cos:
+        sa_entries = [e for e in co_exam_entries.get(co.code, []) if str(e.get("exam_type", "")) in _SA_KEYS]
+        if sa_entries:
+            # Use the highest-weight SA exam.
+            best_sa = max(sa_entries, key=lambda e: float(e.get("weight", 0.0) or 0.0))
+            sa_att = float(best_sa.get("attainment", 0.0) or 0.0)
+            sa_key = str(best_sa.get("exam_type", "sa"))
+            formula = f"SA = {sa_key}({sa_att:.2f}%)"
+        else:
+            sa_att = 0.0
+            formula = "SA = 0% (no SA/final exam found — using FA only)"
+        sa_results[co.code] = {"sa_att": round(sa_att, 2), "formula": formula}
+
+    # ── Step D: Direct CO attainment ─────────────────────────────────────────
+    direct_results: Dict[str, Dict] = {}
+    _eff_fa_w = fa_weight if sa_results and any(v["sa_att"] > 0 for v in sa_results.values()) else 1.0
+    _eff_sa_w = sa_weight if _eff_fa_w < 1.0 else 0.0
+    for co in cos:
+        fa_v = fa_results[co.code]["fa_att"]
+        sa_v = sa_results[co.code]["sa_att"]
+        direct = fa_v * _eff_fa_w + sa_v * _eff_sa_w
+        formula = f"Direct = FA({fa_v:.2f}%) × {_eff_fa_w} + SA({sa_v:.2f}%) × {_eff_sa_w} = {direct:.2f}%"
+        direct_results[co.code] = {"direct_att": round(direct, 2), "fa_att": fa_v, "sa_att": sa_v, "fa_weight": _eff_fa_w, "sa_weight": _eff_sa_w, "formula": formula}
+
+    # ── Step E: Indirect + Final CO attainment ───────────────────────────────
+    final_results: List[Dict] = []
+    s = get_settings()
+    target_level: int = getattr(s, "co_target_level", 2)
+
+    for co in cos:
+        indirect_pct = await svc._get_indirect_attainment(resolved_course_id, co.id)
+        direct_v = direct_results[co.code]["direct_att"]
+
+        if indirect_pct is not None:
+            final = direct_v * direct_weight + indirect_pct * indirect_weight
+            final_formula = f"Final = Direct({direct_v:.2f}%) × {direct_weight} + Indirect({indirect_pct:.2f}%) × {indirect_weight} = {final:.2f}%"
+            has_indirect = True
+        else:
+            final = direct_v
+            final_formula = f"Final = Direct({direct_v:.2f}%) [Indirect survey not available]"
+            has_indirect = False
+
+        achieved_level = _level(final, live_thresholds)
+        level_num = {"Level 1": 1, "Level 2": 2, "Level 3": 3}.get(achieved_level, 1)
+        gap = level_num < target_level
+        # gap_pct = how far below the NBA level threshold the CO is
+        target_threshold = l3_pct if target_level == 3 else (l2_pct if target_level == 2 else 40.0)
+        gap_pct = max(0.0, target_threshold - final)
+
+        # CAP recommendation based on gap severity
+        if gap:
+            if gap_pct > 15:
+                cap = "Redesign CO statement, change teaching method, add remedial class"
+            elif gap_pct > 10:
+                cap = "Add more practice problems, increase feedback frequency"
+            else:
+                cap = "Minor adjustment to question difficulty or marking scheme"
+        else:
+            cap = None
+
+        final_results.append({
+            "co_id": co.id,
+            "co_code": co.code,
+            "co_statement": co.statement,
+            "bloom_level": str(co.bloom_level.value if hasattr(co.bloom_level, "value") else co.bloom_level),
+            # All intermediate values
+            "fa_att": fa_results[co.code]["fa_att"],
+            "fa_formula": fa_results[co.code]["formula"],
+            "sa_att": sa_results[co.code]["sa_att"],
+            "sa_formula": sa_results[co.code]["formula"],
+            "direct_att": direct_results[co.code]["direct_att"],
+            "direct_formula": direct_results[co.code]["formula"],
+            "indirect_att": round(indirect_pct, 2) if indirect_pct is not None else None,
+            "has_indirect": has_indirect,
+            "final_att": round(final, 2),
+            "final_formula": final_formula,
+            "attainment_level": achieved_level,
+            "target_level": target_level,
+            "target_met": not gap,
+            "gap_flag": gap,
+            "cap_action": cap,
+            "status": "Attained ✓" if not gap else "CAP Required ✗",
+        })
+
+    # ── Step F: PO/PSO attainment ────────────────────────────────────────────
+    po_attainments = await svc.get_course_attainment_summary(resolved_course_id)
+    matrix = await svc.get_co_po_matrix(resolved_course_id)
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    avg_final = sum(r["final_att"] for r in final_results) / max(len(final_results), 1)
+    gap_cos = [r for r in final_results if r["gap_flag"]]
+
+    return {
+        "course_id": resolved_course_id,
+        "requested_course": course_id,
+        "course_code": course.course_code,
+        "course_name": course.course_name,
+        "config": {
+            "threshold_pct": int(threshold_pct * 100),
+            "fa_method": fa_method,
+            "fa_best_n": fa_best_n,
+            "fa_weight": _eff_fa_w,
+            "sa_weight": _eff_sa_w,
+            "direct_weight": direct_weight,
+            "indirect_weight": indirect_weight,
+            "target_level": target_level,
+        },
+        "nba_formulas": {
+            "co_per_exam": "CO_att%(E,CO) = pass_count(students >= threshold×CO_max) / total_students × 100",
+            "fa_best_n_of_m": f"FA_CO_att = avg(top {fa_best_n} of M FA scores)",
+            "fa_simple_avg": "FA_CO_att = sum(all FA scores) / M",
+            "fa_weighted": "FA_CO_att = 0.10×T1 + 0.15×T2 + 0.20×T3 + 0.25×T4 + 0.30×T5",
+            "direct": f"Direct_CO_att = FA×{_eff_fa_w} + SA×{_eff_sa_w}",
+            "indirect": "Indirect_CO_att = (mean_Likert / 5) × 100",
+            "final": f"Final_CO_att = Direct×{direct_weight} + Indirect×{indirect_weight}",
+            "po": "Course_PO_att = Σ(Final_CO_att × mapping_weight) / Σ(mapping_weight)",
+            "level": f"L3 ≥ {l3_pct:.0f}% | L2 {l2_pct:.0f}–{l3_pct-1:.0f}% | L1 < {l2_pct:.0f}%",
+        },
+        "per_exam": per_exam_results,
+        "co_attainments": final_results,
+        "po_attainments": po_attainments.get("po_attainments", []),
+        "co_po_matrix": matrix,
+        "gap_analysis": {
+            "cos_below_target": gap_cos,
+            "total_gap_cos": len(gap_cos),
+            "action_required": len(gap_cos) > 0,
+        },
+        "summary": {
+            "total_cos": len(final_results),
+            "cos_attained": len(final_results) - len(gap_cos),
+            "cos_gap": len(gap_cos),
+            "avg_final_attainment": round(avg_final, 2),
+            "overall_level": _level(avg_final),
+        },
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════

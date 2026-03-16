@@ -66,8 +66,11 @@ export default function ProfilePage() {
                <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-mono text-white/30 uppercase tracking-widest flex items-center gap-2 mb-1"><Link2 className="w-3 h-3" /> Authorized Roles</span>
                   <div className="flex gap-2 mt-2">
-                     <span className="text-[10px] uppercase font-mono px-2 py-0.5 border border-brand text-brand">Faculty</span>
-                     {activeRole !== 'faculty' && <span className="text-[10px] uppercase font-mono px-2 py-0.5 border border-white/20 text-white/40">{activeRole?.replace('_', ' ')}</span>}
+                     {user?.roles?.map((r: string) => (
+                       <span key={r} className="text-[10px] uppercase font-mono px-2 py-0.5 border border-brand text-brand">{r.replace("_", " ")}</span>
+                     )) ?? (
+                       <span className="text-[10px] uppercase font-mono px-2 py-0.5 border border-brand text-brand">{activeRole?.replace("_", " ") || "—"}</span>
+                     )}
                   </div>
                </div>
             </div>

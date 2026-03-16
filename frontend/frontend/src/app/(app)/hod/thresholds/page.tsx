@@ -6,7 +6,8 @@ import { useAuthStore } from "@/lib/authStore";
 import apiClient from "@/lib/apiClient";
 
 export default function HODThresholdsViewPage() {
-  const { activeAY } = useAuthStore();
+  const { user, activeAY } = useAuthStore();
+  const dept = String(user?.department || "").trim();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,10 +15,18 @@ export default function HODThresholdsViewPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (!dept) {
+        if (!cancelled) {
+          setData(null);
+          setError("No department is mapped to this user.");
+          setLoading(false);
+        }
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
-        const res = await apiClient.getLeadCOAttainment({ academic_year: activeAY });
+        const res = await apiClient.getLeadCOAttainment({ department: dept, academic_year: activeAY });
         if (!cancelled) setData(res);
       } catch (e: any) {
         if (!cancelled) setError(typeof e?.message === "string" ? e.message : "Failed to load threshold analytics.");
@@ -29,12 +38,18 @@ export default function HODThresholdsViewPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeAY]);
+  }, [dept, activeAY]);
 
   const derived = useMemo(() => {
-    const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+    const list = Array.isArray(data?.course_rows)
+      ? data.course_rows.flatMap((course: any) =>
+          Array.isArray(course?.cos_data)
+            ? course.cos_data.map((co: any) => co?.final_percentage)
+            : []
+        )
+      : (Array.isArray(data?.items) ? data.items.map((x: any) => x?.attainment_percentage ?? x?.percentage) : Array.isArray(data) ? data : []);
     const values = list
-      .map((x: any) => Number(x?.attainment_percentage ?? x?.percentage ?? NaN))
+      .map((x: any) => Number(x ?? NaN))
       .filter((n: number) => Number.isFinite(n));
     if (!values.length) return { p33: 0, p66: 0, avg: 0 };
     const sorted = [...values].sort((a, b) => a - b);
@@ -53,9 +68,9 @@ export default function HODThresholdsViewPage() {
         {error ? <p className="text-alert">{error}</p> : null}
         {!loading && !error ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="border border-white/10 rounded p-3"><p className="text-xs text-white/40">Level 1 / 2 Cutoff</p><p className="text-2xl text-white font-display mt-1">{derived.p33}%</p></div>
-            <div className="border border-white/10 rounded p-3"><p className="text-xs text-white/40">Level 2 / 3 Cutoff</p><p className="text-2xl text-white font-display mt-1">{derived.p66}%</p></div>
-            <div className="border border-white/10 rounded p-3"><p className="text-xs text-white/40">Department Average</p><p className="text-2xl text-white font-display mt-1">{derived.avg}%</p></div>
+            <div className="border border-white/10 p-4"><p className="text-xs text-white/40">Level 1 / 2 Cutoff (33rd pct)</p><p className="text-2xl text-white font-display mt-1">{derived.p33}%</p></div>
+            <div className="border border-white/10 p-4"><p className="text-xs text-white/40">Level 2 / 3 Cutoff (66th pct)</p><p className="text-2xl text-white font-display mt-1">{derived.p66}%</p></div>
+            <div className="border border-white/10 p-4"><p className="text-xs text-white/40">Department Average</p><p className="text-2xl text-white font-display mt-1">{derived.avg}%</p></div>
           </div>
         ) : null}
       </div>

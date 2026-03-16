@@ -1,44 +1,158 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, User, Mail, Lock, Building2, GraduationCap, ChevronRight, BookOpen } from "lucide-react";
+import { ArrowRight, CheckCircle2, User, Mail, Lock, Building2, GraduationCap, ChevronRight, BookOpen, Loader2 } from "lucide-react";
 import { fadeSlideUp, staggerContainer } from "@/lib/animations";
+import { useUIStore } from "@/lib/uiStore";
+import { apiClient } from "@/lib/apiClient";
+import { useAuthStore } from "@/lib/authStore";
+
+// ── SYNC: Match login page constants ──
+const DEPARTMENTS = ["Administration", "CSE", "ECE", "MECH", "CIVIL", "IT"];
+const ACTIVE_AYS = ["2025-26", "2024-25", "2023-24", "2022-23"];
 
 const ROLES = [
   { id: "faculty", label: "Faculty", icon: GraduationCap, desc: "Create courses, upload syllabi, generate COs" },
   { id: "subject_lead", label: "Subject Lead", icon: BookOpen, desc: "Coordinate specific courses, approve CO-PO maps" },
-  { id: "department_head", label: "Department Head", icon: Building2, desc: "Manage faculty, view analytics & reports" },
+  { id: "hod", label: "Department Head", icon: Building2, desc: "Manage faculty, view analytics & reports" },
   { id: "admin", label: "Admin", icon: User, desc: "Full system access and user management" },
 ];
 
-const STEPS = ["Account", "Role", "Security"];
+const STEPS = ["Account", "Department", "Role", "Security"];
+
+// ── SYNC: Validation functions from login page ──
+function validateFullName(val: string) {
+  if (!val.trim()) return "Full name is required";
+  return "";
+}
+
+function validateEmail(val: string) {
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!val) return "Email is required";
+  if (!EMAIL_RE.test(val)) return "Enter a valid email";
+  return "";
+}
+
+function validatePassword(val: string) {
+  if (!val) return "Password is required";
+  if (val.length < 8) return "Password must be at least 8 characters";
+  return "";
+}
+
+const ROLE_HOME: Record<string, string> = {
+  admin: "/admin/dashboard",
+  hod: "/dashboard",
+  subject_lead: "/dashboard",
+  faculty: "/faculty/dashboard",
+  student: "/student/dashboard",
+};
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const { addToast } = useUIStore();
+  const { setActiveRole, setActiveAY } = useAuthStore();
+  
   const [step, setStep] = useState(0);
   const [role, setRole] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", department: "", password: "", confirm: "" });
+  const [isLoading, setIsLoading] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    department: "",
+    academicYear: "2025-26",
+    password: "",
+    confirm: "",
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
 
   const setField = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  
+  const markTouched = (field: string) => {
+    setTouched(t => ({ ...t, [field]: true }));
+  };
 
-  const validate = () => {
+  const validate = (forSubmit?: boolean) => {
     const e: Record<string, string> = {};
-    if (step === 0) {
-      if (!form.name.trim()) e.name = "Full name is required";
-      if (!form.email.includes("@")) e.email = "Valid email required";
+    
+    // If submitting, validate all steps; otherwise validate current step
+    const stepsToValidate = forSubmit ? [0, 1, 2, 3] : [step];
+    
+    for (const s of stepsToValidate) {
+      if (s === 0) {
+        const nameErr = validateFullName(form.name);
+        const emailErr = validateEmail(form.email);
+        if (nameErr) e.name = nameErr;
+        if (emailErr) e.email = emailErr;
+      }
+      
+      if (s === 1) {
+        if (!form.department) e.department = "Department is required";
+      }
+      
+      if (s === 2) {
+        if (!role) e.role = "Please select a role";
+      }
+      
+      if (s === 3) {
+        const passErr = validatePassword(form.password);
+        if (passErr) e.password = passErr;
+        if (form.password !== form.confirm) e.confirm = "Passwords do not match";
+      }
     }
-    if (step === 1 && !role) e.role = "Please select a role";
-    if (step === 2) {
-      if (form.password.length < 8) e.password = "Min. 8 characters required";
-      if (form.password !== form.confirm) e.confirm = "Passwords do not match";
-    }
+    
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const next = () => { if (validate()) setStep(s => s + 1); };
+  const next = () => {
+    if (validate()) setStep(s => s + 1);
+  };
+
+  const prev = () => setStep(s => s - 1);
+
+  const handleRegister = async () => {
+    if (!validate(true)) return;
+    setIsLoading(true);
+
+    try {
+      const response = await apiClient.register({
+        username: form.email,
+        email: form.email,
+        password: form.password,
+        full_name: form.name,
+        role,
+      });
+
+      if (response) {
+        addToast("Account created successfully! Welcome to Nexus Engine.", "success");
+        // Hydrate store from the token returned by register
+        const { user } = useAuthStore.getState();
+        setActiveAY(form.academicYear);
+        const resolvedRole = (user?.roles?.[0] as any) ?? role;
+        if (resolvedRole) setActiveRole(resolvedRole);
+        const destination = ROLE_HOME[resolvedRole] || ROLE_HOME[role] || "/dashboard";
+        router.push(destination);
+      }
+    } catch (error: any) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes("already exists") || errorMsg.includes("409")) {
+        addToast("Email already registered. Try logging in instead.", "error");
+      } else if (errorMsg.includes("Failed to fetch") || errorMsg.includes("NetworkError") || errorMsg.includes("fetch")) {
+        addToast("Cannot reach the server. Make sure the backend is running on port 8000.", "error");
+      } else if (errorMsg.includes("Invalid or expired token")) {
+        addToast("Session expired. Please log in again.", "error");
+        router.push("/login?reason=session_expired");
+      } else {
+        addToast(errorMsg || "Registration failed. Please try again.", "error");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-cosmic flex items-center justify-center px-4 py-16">
@@ -66,19 +180,35 @@ export default function RegisterPage() {
               </div>
 
               <div className="flex flex-col gap-6">
+                {/* Full Name */}
                 <label className="flex flex-col gap-2">
                   <span className="text-xs font-mono text-white/50 uppercase tracking-widest flex items-center gap-2"><User className="w-3 h-3" /> Full Name</span>
-                  <input value={form.name} onChange={e => setField("name", e.target.value)} placeholder="Dr. John Smith" className="bg-transparent border-b border-white/20 focus:border-white py-3 text-white placeholder-white/30 outline-none transition-colors text-lg" />
-                  {errors.name && <span className="text-alert text-sm font-mono">{errors.name}</span>}
+                  <input
+                    value={form.name}
+                    onChange={e => setField("name", e.target.value)}
+                    onBlur={() => markTouched("name")}
+                    placeholder="Dr. John Smith"
+                    className={`bg-transparent border-b py-3 text-white placeholder-white/30 outline-none transition-colors text-lg ${
+                      touched.name && errors.name ? "border-alert" : "border-white/20 focus:border-white"
+                    }`}
+                  />
+                  {touched.name && errors.name && <span className="text-alert text-sm font-mono">{errors.name}</span>}
                 </label>
+
+                {/* Email */}
                 <label className="flex flex-col gap-2">
                   <span className="text-xs font-mono text-white/50 uppercase tracking-widest flex items-center gap-2"><Mail className="w-3 h-3" /> Email</span>
-                  <input type="email" value={form.email} onChange={e => setField("email", e.target.value)} placeholder="you@university.edu" className="bg-transparent border-b border-white/20 focus:border-white py-3 text-white placeholder-white/30 outline-none transition-colors text-lg" />
-                  {errors.email && <span className="text-alert text-sm font-mono">{errors.email}</span>}
-                </label>
-                <label className="flex flex-col gap-2">
-                  <span className="text-xs font-mono text-white/50 uppercase tracking-widest flex items-center gap-2"><Building2 className="w-3 h-3" /> Department</span>
-                  <input value={form.department} onChange={e => setField("department", e.target.value)} placeholder="Computer Science & Engineering" className="bg-transparent border-b border-white/20 focus:border-white py-3 text-white placeholder-white/30 outline-none transition-colors text-lg" />
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={e => setField("email", e.target.value)}
+                    onBlur={() => markTouched("email")}
+                    placeholder="you@university.edu"
+                    className={`bg-transparent border-b py-3 text-white placeholder-white/30 outline-none transition-colors text-lg ${
+                      touched.email && errors.email ? "border-alert" : "border-white/20 focus:border-white"
+                    }`}
+                  />
+                  {touched.email && errors.email && <span className="text-alert text-sm font-mono">{errors.email}</span>}
                 </label>
               </div>
 
@@ -88,9 +218,57 @@ export default function RegisterPage() {
             </motion.div>
           )}
 
-          {/* Step 1: Role Selection */}
+          {/* Step 1: Department & Academic Year (SYNC WITH LOGIN) */}
           {step === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-8">
+              <div>
+                <h1 className="text-4xl font-display text-white mb-2">Your context</h1>
+                <p className="text-white/50 font-light">Select your department and academic year.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                {/* Department Dropdown - SYNC with Login */}
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-mono text-white/40 uppercase tracking-widest">Department</span>
+                  <select
+                    value={form.department}
+                    onChange={e => setField("department", e.target.value)}
+                    onBlur={() => markTouched("department")}
+                    className={`bg-transparent text-white text-sm outline-none font-light appearance-none w-full cursor-pointer border-b pb-1 ${
+                      touched.department && errors.department ? "border-alert" : "border-white/20 focus:border-white"
+                    }`}
+                  >
+                    <option value="" className="bg-[#0a0a0f]">Select</option>
+                    {DEPARTMENTS.map(d => <option key={d} value={d} className="bg-[#0a0a0f]">{d}</option>)}
+                  </select>
+                  {touched.department && errors.department && <span className="text-alert text-xs font-mono">{errors.department}</span>}
+                </label>
+
+                {/* Academic Year - SYNC with Login */}
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-mono text-white/40 uppercase tracking-widest">Academic Year</span>
+                  <select
+                    value={form.academicYear}
+                    onChange={e => setField("academicYear", e.target.value)}
+                    className="bg-transparent text-white text-sm outline-none font-light border-none appearance-none w-full cursor-pointer border-b pb-1 border-white/20 focus:border-white"
+                  >
+                    {ACTIVE_AYS.map(a => <option key={a} value={a} className="bg-[#0a0a0f]">{a}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="flex items-center gap-8">
+                <button onClick={prev} className="text-white/40 hover:text-white transition-colors text-sm">← Back</button>
+                <button onClick={next} className="flex items-center gap-3 text-white/80 hover:text-white group">
+                  Continue <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Step 2: Role Selection */}
+          {step === 2 && (
+            <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-8">
               <div>
                 <h1 className="text-4xl font-display text-white mb-2">Select your role</h1>
                 <p className="text-white/50 font-light">This determines your access level and UI.</p>
@@ -112,7 +290,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="flex items-center gap-8">
-                <button onClick={() => setStep(0)} className="text-white/40 hover:text-white transition-colors text-sm">← Back</button>
+                <button onClick={prev} className="text-white/40 hover:text-white transition-colors text-sm">← Back</button>
                 <button onClick={next} className="flex items-center gap-3 text-white/80 hover:text-white group">
                   Continue <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -120,9 +298,9 @@ export default function RegisterPage() {
             </motion.div>
           )}
 
-          {/* Step 2: Password */}
-          {step === 2 && (
-            <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-8">
+          {/* Step 3: Password - SYNC with Login validation */}
+          {step === 3 && (
+            <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="flex flex-col gap-8">
               <div>
                 <h1 className="text-4xl font-display text-white mb-2">Secure your account</h1>
                 <p className="text-white/50 font-light">Set a strong password to protect your data.</p>
@@ -131,14 +309,34 @@ export default function RegisterPage() {
               <div className="flex flex-col gap-6">
                 <label className="flex flex-col gap-2">
                   <span className="text-xs font-mono text-white/50 uppercase tracking-widest flex items-center gap-2"><Lock className="w-3 h-3" /> Password</span>
-                  <input type="password" value={form.password} onChange={e => setField("password", e.target.value)} placeholder="Min. 8 characters" className="bg-transparent border-b border-white/20 focus:border-white py-3 text-white placeholder-white/30 outline-none transition-colors text-lg" />
-                  {errors.password && <span className="text-alert text-sm font-mono">{errors.password}</span>}
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={e => setField("password", e.target.value)}
+                    onBlur={() => markTouched("password")}
+                    placeholder="Min. 8 characters"
+                    className={`bg-transparent border-b py-3 text-white placeholder-white/30 outline-none transition-colors text-lg ${
+                      touched.password && errors.password ? "border-alert" : "border-white/20 focus:border-white"
+                    }`}
+                  />
+                  {touched.password && errors.password && <span className="text-alert text-sm font-mono">{errors.password}</span>}
                 </label>
+
                 <label className="flex flex-col gap-2">
                   <span className="text-xs font-mono text-white/50 uppercase tracking-widest flex items-center gap-2"><Lock className="w-3 h-3" /> Confirm Password</span>
-                  <input type="password" value={form.confirm} onChange={e => setField("confirm", e.target.value)} placeholder="Repeat password" className="bg-transparent border-b border-white/20 focus:border-white py-3 text-white placeholder-white/30 outline-none transition-colors text-lg" />
-                  {errors.confirm && <span className="text-alert text-sm font-mono">{errors.confirm}</span>}
+                  <input
+                    type="password"
+                    value={form.confirm}
+                    onChange={e => setField("confirm", e.target.value)}
+                    onBlur={() => markTouched("confirm")}
+                    placeholder="Repeat password"
+                    className={`bg-transparent border-b py-3 text-white placeholder-white/30 outline-none transition-colors text-lg ${
+                      touched.confirm && errors.confirm ? "border-alert" : "border-white/20 focus:border-white"
+                    }`}
+                  />
+                  {touched.confirm && errors.confirm && <span className="text-alert text-sm font-mono">{errors.confirm}</span>}
                 </label>
+
                 {/* Password strength hints */}
                 <div className="flex gap-2 mt-2">
                   {[form.password.length >= 8, /[A-Z]/.test(form.password), /[0-9]/.test(form.password)].map((met, i) => (
@@ -148,10 +346,23 @@ export default function RegisterPage() {
               </div>
 
               <div className="flex items-center gap-8">
-                <button onClick={() => setStep(1)} className="text-white/40 hover:text-white transition-colors text-sm">← Back</button>
-                <Link href="/dashboard" className="flex items-center gap-3 px-8 py-4 bg-white text-black font-medium text-sm">
-                  Create Account <ChevronRight className="w-4 h-4" />
-                </Link>
+                <button onClick={prev} className="text-white/40 hover:text-white transition-colors text-sm">← Back</button>
+                <button
+                  onClick={handleRegister}
+                  disabled={isLoading}
+                  className="flex items-center gap-3 px-8 py-4 bg-white text-black font-medium text-sm hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      Create Account <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
               </div>
             </motion.div>
           )}

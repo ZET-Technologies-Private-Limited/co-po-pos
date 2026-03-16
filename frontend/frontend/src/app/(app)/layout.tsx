@@ -103,14 +103,54 @@ function GlobalKeyBindings() {
   return null;
 }
 
+const ROLE_HOME: Record<string, string> = {
+  admin: "/admin/dashboard",
+  department_head: "/dashboard",
+  subject_lead: "/dashboard",
+  faculty: "/faculty/dashboard",
+  student: "/student/dashboard",
+};
+
+// Pages that manage their own layout (no outer padding)
+const FULL_BLEED_PREFIXES = [
+  "/faculty/course/",
+  "/hod/",
+  "/dashboard",
+];
+
+// Pages that render completely standalone — no header, no nav shell
+const STANDALONE_PATHS = [
+  "/faculty/course/new",
+];
+
+function AppContent({ pathname, children }: { pathname: string; children: React.ReactNode }) {
+  const isFullBleed = FULL_BLEED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  if (isFullBleed) return <>{children}</>;
+  return <div className="px-4 md:px-8 py-8">{children}</div>;
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { openNotif, notifications, openSearch, profileMenuOpen, openProfileMenu, closeProfileMenu, darkMode, openChat } = useUIStore();
-  const { activeRole, user, activeAY, setActiveAY } = useAuthStore();
+  const { activeRole, user, activeAY, setActiveAY, setActiveRole, isAuthenticated } = useAuthStore();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const unread = notifications.filter(n => !n.read).length;
   const isReadOnlyAY = activeAY !== AY_OPTIONS[0];
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/login");
+    }
+  }, [isAuthenticated, router]);
+
+  // Initialize activeRole from user.roles if null (handles hydration issues)
+  useEffect(() => {
+    if (!activeRole && user?.roles && user.roles.length > 0) {
+      setActiveRole(user.roles[0] as any);
+    }
+  }, [activeRole, user, setActiveRole]);
 
   // Close mobile nav on route change
   useEffect(() => { setMobileOpen(false); }, [pathname]);
@@ -148,7 +188,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
-  const navItems = activeRole ? ROLE_NAV_CONFIG[activeRole] : ROLE_NAV_CONFIG["faculty"];
+  const navItems = (activeRole && ROLE_NAV_CONFIG[activeRole]) ? ROLE_NAV_CONFIG[activeRole] : ROLE_NAV_CONFIG["faculty"];
 
   const handleAYChange = (ay: string) => {
     setActiveAY(ay);
@@ -157,6 +197,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     router.replace(`${pathname}?${params.toString()}`);
     router.refresh();
   };
+
+  // Standalone pages bypass the entire shell
+  if (STANDALONE_PATHS.some((p) => pathname === p || pathname.startsWith(p + "?")))
+    return (
+      <div className={`min-h-screen bg-cosmic text-white ${darkMode ? "" : "brightness-110"}`}>
+        <ToastContainer />
+        <SessionTimeoutModal />
+        {children}
+      </div>
+    );
 
   return (
     <div className={`min-h-screen bg-cosmic text-white flex flex-col ${darkMode ? "" : "brightness-110"}`}>
@@ -222,7 +272,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Desktop nav */}
-        <nav aria-label="Main navigation" className="hidden md:flex gap-0 text-[11px] font-mono flex-1 ml-4 overflow-hidden">
+        <nav aria-label="Main navigation" className="hidden md:flex gap-0 text-[11px] font-mono flex-1 ml-4 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {navItems.map(item => (
             item.href === "#" ? (
               <button
@@ -372,9 +422,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* ── MAIN CONTENT ── */}
-      <main id="main-content" role="main" className="flex-1 w-full px-4 md:px-8 py-8">
+      <main id="main-content" role="main" className="flex-1 w-full">
         <ErrorBoundary>
-          {children}
+          <AppContent pathname={pathname}>{children}</AppContent>
         </ErrorBoundary>
       </main>
 

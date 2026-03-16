@@ -1,0 +1,153 @@
+4484: 
+4485: 
+4486: @router.post("/map-co-po/llm", summary="LLM-powered CO → PO mapping with reasoning (Gemini/OpenAI)")
+4487: async def map_co_to_po_llm(
+4488:     course_id: str = Query(...),
+4489:     program_id: Optional[str] = Query(None),
+4490:     session: AsyncSession = Depends(get_session),
+4491:     current_user: User = Depends(get_current_user),
+4492: ):
+4493:     """
+4494:     Uses the configured LLM (Gemini/OpenAI/Ollama) to reason about CO-PO alignment.
+4495:     For each CO the LLM assigns a level (0/1/2/3) to every PO with a justification.
+4496:     Stores results as similarity_score = level/3.0 in co_po_mapping_table.
+4497:     Falls back to semantic similarity if LLM is unavailable.
+4498:     """
+4499:     if _role_value(current_user) == "faculty":
+4500:         await _assert_faculty_owns_course(session, current_user, course_id)
+4501: 
+4502:     resolved_program_id = await _resolve_program_key_for_course(session, course_id, program_id, require="po")
+4503: 
+4504:     # Load COs
+4505:     cos_result = await session.execute(
+4506:         select(CourseOutcome).where(CourseOutcome.course_id == course_id).order_by(CourseOutcome.code)
+4507:     )
+4508:     cos = list(cos_result.scalars().all())
+4509:     if not cos:
+4510:         raise HTTPException(status_code=404, detail="No course outcomes found for this course")
+4511: 
+4512:     # Load POs
+4513:     pos_result = await session.execute(
+4514:         select(ProgramOutcome).where(ProgramOutcome.program == resolved_program_id).order_by(ProgramOutcome.code)
+4515:     )
+4516:     pos = list(pos_result.scalars().all())
+4517:     if not pos:
+4518:         raise HTTPException(status_code=404, detail="No program outcomes found")
+4519: 
+4520:     from app.ai_engine.llm.llm_client import llm_client
+4521:     from app.modules.mapping.services.semantic_mapping_service import SemanticMappingService
+4522:     import json as _json
+4523: 
+4524:     po_list_text = "\n".join(f"  {po.code}: {po.statement}" for po in pos)
+4525:     all_mappings: List[Dict[str, Any]] = []
+4526:     llm_used = False
+4527: 
+4528:     for co in cos:
+4529:         prompt = (
+4530:             f"You are an OBE (Outcome-Based Education) expert for NBA accreditation.\n"
+4531:             f"Course Outcome (CO):\n  {co.code}: {co.statement}\n\n"
+4532:             f"Program Outcomes (POs):\n{po_list_text}\n\n"
+4533:             f"For each PO, assign a correlation level:\n"
+4534:             f"  3 = Strong (CO directly addresses this PO)\n"
+4535:             f"  2 = Medium (CO partially addresses this PO)\n"
+4536:             f"  1 = Weak (CO has minor relevance to this PO)\n"
+4537:             f"  0 = None (no meaningful correlation)\n\n"
+4538:             f"Return ONLY a JSON object mapping PO code to level integer, e.g.:\n"
+4539:             f'{{"PO1": 3, "PO2": 1, "PO3": 0, ...}}\n'
+4540:             f"Include ALL {len(pos)} POs. No explanation, just JSON."
+4541:         )
+4542:         llm_response = await llm_client.generate_completion(prompt)
+4543:         co_levels: Dict[str, int] = {}
+4544: 
+4545:         if llm_response:
+4546:             try:
+4547:                 # Strip markdown fences if present
+4548:                 clean = llm_response.strip()
+4549:                 if clean.startswith("```"):
+4550:                     clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+4551:                 parsed = _json.loads(clean)
+4552:                 if isinstance(parsed, dict):
+4553:                     co_levels = {k: max(0, min(3, int(v))) for k, v in parsed.items() if isinstance(v, (int, float))}
+4554:                     llm_used = True
+4555:             except Exception:
+4556:                 pass
+4557: 
+4558:         if not co_levels:
+4559:             # Fallback: semantic similarity for this CO
+4560:             svc = SemanticMappingService(session)
+4561:             for po in pos:
+4562:                 sim = await svc._combined_similarity(co.statement, po.statement)
+4563:                 lvl = 3 if sim >= 0.75 else (2 if sim >= 0.50 else (1 if sim >= 0.10 else 0))
+4564:                 co_levels[po.code] = lvl
+4565: 
+4566:         for po in pos:
+4567:             lvl = co_levels.get(po.code, 0)
+4568:             if lvl > 0:
+4569:                 all_mappings.append({
+4570:                     "course_outcome_id": co.id,
+4571:                     "program_outcome_id": po.id,
+4572:                     "similarity_score": round(lvl / 3.0, 6),
+4573:                     "co_code": co.code,
+4574:                     "po_code": po.code,
+4575:                     "level": lvl,
+4576:                 })
+4577: 
+4578:     # Persist to DB
+4579:     co_ids = [co.id for co in cos]
+4580:     await session.execute(
+4726: 
+4727: 
+4728: @router.get("/attainment/matrix/{course_id}", summary="Get CO-PO correlation matrix for a course")
+4729: async def get_co_po_matrix(
+4730:     course_id: str,
+4731:     session: AsyncSession = Depends(get_session),
+4732:     current_user: User = Depends(get_current_user),
+4733: ):
+4734:     """
+4735:     Returns the CO-PO matrix with integer levels 0-3 derived from stored similarity scores.
+4736:     Level thresholds: sim>=0.75 → 3, sim>=0.50 → 2, sim>=0.10 → 1, else 0.
+4737:     """
+4738:     course = await _assert_faculty_owns_course(session, current_user, course_id)
+4739:     svc = AttainmentService(session)
+4740:     matrix = await svc.get_co_po_matrix(course.id)
+4741:     return matrix
+4742: 
+4743: 
+4744: @router.get("/attainment/students/{course_id}", summary="Get per-student CO attainment breakdown")
+4745: async def get_student_performance(
+4746:     course_id: str,
+4747:     exam_id: Optional[str] = Query(None),
+4748:     session: AsyncSession = Depends(get_session),
+4749:     current_user: User = Depends(get_current_user),
+4750: ):
+4751:     course = await _assert_faculty_owns_course(session, current_user, course_id)
+4752:     svc = AttainmentService(session)
+4753:     rows = await svc.get_student_performance(course.id, exam_id)
+4754:     return {"course_id": course.id, "students": rows, "total": len(rows)}
+4755: 
+4756: 
+4757: @router.post("/attainment/calculate-co", summary="Calculate CO attainment (threshold-based) for one exam")
+4758: async def calculate_co_attainment(
+4759:     course_id: str = Query(...),
+4760:     exam_id:   str = Query(...),
+5030: 
+5031: 
+5032: @router.get("/attainment/matrix/{course_id}", summary="CO × PO correlation matrix")
+5033: async def get_co_po_matrix(
+5034:     course_id: str,
+5035:     session: AsyncSession = Depends(get_session),
+5036:     current_user: User = Depends(get_current_user),
+5037: ):
+5038:     """
+5039:     Returns the CO×PO mapping matrix.
+5040:     Cell value: 3(strong ≥0.75), 2(medium ≥0.50), 1(weak ≥0.30), 0(none)
+5041:     """
+5042:     await _assert_faculty_owns_course(session, current_user, course_id)
+5043:     svc = AttainmentService(session)
+5044:     return await svc.get_co_po_matrix(course_id)
+5045: 
+5046: 
+5047: @router.get("/attainment/students/{course_id}", summary="Per-student performance analytics")
+5048: async def get_student_performance(
+5049:     course_id: str,
+5050:     exam_id: Optional[str] = Query(None),

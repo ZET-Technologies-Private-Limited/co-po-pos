@@ -123,10 +123,37 @@ export default function StudentBulkEnrolmentPage() {
     reader.readAsText(file);
   }
 
-  function confirmEnrolment() {
-    addToast(`${rows.length} students enrolled successfully.`, "success");
-    setRows([]);
-    setErrors([]);
+  const [enrolling, setEnrolling] = useState(false);
+
+  async function confirmEnrolment() {
+    setEnrolling(true);
+    let success = 0;
+    const errs: EnrolError[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      try {
+        await apiClient.createUser({
+          username: r.rollNo,
+          email: r.email,
+          password: "Student@123",
+          full_name: r.name,
+          role: "viewer",
+          department: "",
+        });
+        success++;
+      } catch (e: any) {
+        errs.push({ row: i + 2, error: e?.message || "Failed to enrol" });
+      }
+    }
+    setEnrolling(false);
+    if (errs.length > 0) {
+      setErrors(errs);
+      addToast(`${success} enrolled, ${errs.length} failed.`, "warning");
+    } else {
+      addToast(`${success} students enrolled successfully.`, "success");
+      setRows([]);
+      setErrors([]);
+    }
   }
 
   if (loading) return (<AccessGate feature="user_management" deny="lock"><div className="max-w-6xl mx-auto pb-24 py-8"><p className="text-white/60">Loading courses...</p></div></AccessGate>);
@@ -193,10 +220,10 @@ export default function StudentBulkEnrolmentPage() {
         <motion.section variants={fadeSlideUp}>
           <button
             onClick={confirmEnrolment}
-            disabled={rows.length === 0 || errors.length > 0}
+            disabled={rows.length === 0 || errors.length > 0 || enrolling}
             className="px-4 py-2 bg-attain text-white text-xs font-mono uppercase disabled:opacity-40"
           >
-            Confirm enrol
+            {enrolling ? "Enrolling..." : "Confirm enrol"}
           </button>
         </motion.section>
       </motion.div>

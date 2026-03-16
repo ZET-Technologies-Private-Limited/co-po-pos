@@ -152,6 +152,8 @@ export default function ForgotPasswordPage() {
       setStep(1);
       setOtpTimer(response?.expires_in_seconds ?? OTP_EXPIRY_SECS);
       setResendTimer(response?.resend_in_seconds ?? RESEND_COOLDOWN);
+      // dev_otp is returned by the backend when DEBUG=True (no SMTP configured)
+      if (response?.dev_otp) setOtp(String(response.dev_otp));
     } catch (err: any) {
       setErrors({ form: err?.message || "Unable to send OTP. Please try again." });
     } finally {

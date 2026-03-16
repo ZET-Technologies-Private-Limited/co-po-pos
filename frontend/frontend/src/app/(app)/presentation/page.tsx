@@ -26,7 +26,7 @@ const WORKFLOW_STEPS = [
     icon: BookOpen, 
     desc: "Define structural parameters for new institutional courses.",
     insight: "System automatically cross-references department codes for uniqueness.",
-    href: "/courses/new", 
+    href: "/faculty/course/new", 
     color: "text-aurora" 
   },
   { 

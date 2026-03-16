@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/lib/authStore";
 import { AccessGate } from "@/components/auth/AccessGate";
+import { motion } from "framer-motion";
+import { staggerContainer, fadeSlideUp } from "@/lib/animations";
 import apiClient from "@/lib/apiClient";
 
 export default function DeptPOPSOAttainmentPage() {
   const { user, activeAY } = useAuthStore();
-  const dept = user?.department || "CSE";
-
+  const dept = String(user?.department || "").trim();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +17,14 @@ export default function DeptPOPSOAttainmentPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (!dept) {
+        if (!cancelled) {
+          setData(null);
+          setError("No department is mapped to this user.");
+          setLoading(false);
+        }
+        return;
+      }
       setLoading(true);
       setError(null);
       try {
@@ -28,20 +37,103 @@ export default function DeptPOPSOAttainmentPage() {
       }
     }
     void load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [dept, activeAY]);
+
+  const items: any[] = useMemo(() => {
+    if (Array.isArray(data?.po_table) || Array.isArray(data?.pso_table)) {
+      const po = Array.isArray(data?.po_table)
+        ? data.po_table.map((x: any) => ({
+            outcome_code: x.po_code,
+            attainment: x.weighted_attainment,
+            target: x.target,
+            type: "PO",
+          }))
+        : [];
+      const pso = Array.isArray(data?.pso_table)
+        ? data.pso_table.map((x: any) => ({
+            outcome_code: x.pso_code,
+            attainment: x.weighted_attainment,
+            target: x.target,
+            type: "PSO",
+          }))
+        : [];
+      return [...po, ...pso];
+    }
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data?.attainments)) return data.attainments;
+    if (Array.isArray(data)) return data;
+    return [];
+  }, [data]);
+
+  const poItems = items.filter((x: any) => String(x.po_id ?? x.outcome_code ?? x.type ?? "").startsWith("PO"));
+  const psoItems = items.filter((x: any) => String(x.po_id ?? x.outcome_code ?? x.type ?? "").startsWith("PSO"));
+
+  function renderTable(rows: any[], title: string) {
+    return (
+      <div className="border border-white/10">
+        <div className="px-4 py-3 border-b border-white/10">
+          <h2 className="text-sm font-mono text-white uppercase tracking-widest">{title}</h2>
+        </div>
+        {rows.length === 0 ? (
+          <p className="px-4 py-6 text-white/40 text-sm">No data available.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Outcome</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Attainment %</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Target %</th>
+                  <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((item: any, i: number) => {
+                  const pct = Number(item.attainment_percentage ?? item.percentage ?? item.attainment ?? 0);
+                  const target = Number(item.target ?? 60);
+                  const met = pct >= target;
+                  return (
+                    <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
+                      <td className="px-4 py-2 text-xs text-white font-mono">{item.po_id ?? item.outcome_code ?? `Row ${i + 1}`}</td>
+                      <td className="px-4 py-2 text-xs text-white">{pct}%</td>
+                      <td className="px-4 py-2 text-xs text-white/50">{target}%</td>
+                      <td className={`px-4 py-2 text-xs font-mono ${met ? "text-attain" : "text-alert"}`}>{met ? "Met" : "Not Met"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <AccessGate feature="dept_summary" deny="lock">
-      <div className="max-w-6xl mx-auto pb-24 space-y-6">
-        <h1 className="text-3xl text-white font-display">Department PO/PSO Attainment</h1>
-        <p className="text-white/50 text-sm">Department: {dept} | AY {activeAY}</p>
-        {loading ? <p className="text-white/60">Loading...</p> : null}
-        {error ? <p className="text-alert">{error}</p> : null}
-        {!loading && !error ? <pre className="text-xs text-white/70 whitespace-pre-wrap border border-white/10 rounded p-3">{JSON.stringify(data, null, 2)}</pre> : null}
-      </div>
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="max-w-6xl mx-auto pb-24 space-y-6">
+        <motion.header variants={fadeSlideUp} className="border-b border-white/5 pb-4">
+          <h1 className="text-3xl font-display text-white">Department PO/PSO Attainment</h1>
+          <p className="text-white/50 mt-1 text-sm">Department: {dept || "N/A"} | AY {activeAY}</p>
+        </motion.header>
+
+        {loading && <p className="text-white/60">Loading...</p>}
+        {error && <p className="text-alert text-sm">{error}</p>}
+
+        {!loading && !error && (
+          <>
+            <motion.section variants={fadeSlideUp}>
+              {renderTable(poItems.length ? poItems : items, "Program Outcomes (PO)")}
+            </motion.section>
+            {psoItems.length > 0 && (
+              <motion.section variants={fadeSlideUp}>
+                {renderTable(psoItems, "Program Specific Outcomes (PSO)")}
+              </motion.section>
+            )}
+          </>
+        )}
+      </motion.div>
     </AccessGate>
   );
 }

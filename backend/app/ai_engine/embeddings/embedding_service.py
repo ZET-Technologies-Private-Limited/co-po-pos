@@ -51,7 +51,8 @@ class EmbeddingService:
             return None
         
         try:
-            embedding = self.embeddings.embed_query(text)
+            import asyncio
+            embedding = await asyncio.to_thread(self.embeddings.embed_query, text)
             return embedding
         except Exception as e:
             self.logger.error(f"Embedding generation failed: {str(e)}")
@@ -63,7 +64,8 @@ class EmbeddingService:
             return None
         
         try:
-            embeddings = self.embeddings.embed_documents(texts)
+            import asyncio
+            embeddings = await asyncio.to_thread(self.embeddings.embed_documents, texts)
             return embeddings
         except Exception as e:
             self.logger.error(f"Batch embedding failed: {str(e)}")

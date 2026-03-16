@@ -1,11 +1,17 @@
 version: "3.1"
 
 intents:
+  # ── General ────────────────────────────────────────────────────────────────
   - greet
   - goodbye
   - affirm
   - deny
+  - out_of_scope
+  - help
+
+  # ── STEP 1: CO Generation ──────────────────────────────────────────────────
   - start_co_generation
+  - provide_course_info
   - provide_syllabus
   - confirm_po_pso
   - request_co_count
@@ -14,29 +20,117 @@ intents:
   - regenerate_cos
   - regenerate_single_co
   - explain_co_bt
+  - ask_co_format
+  - ask_bloom_verbs
+
+  # ── STEP 2: CO-PO-PSO Mapping ──────────────────────────────────────────────
+  - map_co_po
+  - map_co_pso
+  - update_mapping_weight
+  - ask_mapping_density
+  - ask_po_definition
+  - confirm_mapping_matrix
+
+  # ── STEP 3: Exam Configuration ─────────────────────────────────────────────
+  - configure_exam
   - setup_exam
   - provide_exam_type
   - provide_max_marks
-  - analyse_question
+  - provide_question_marks
+  - set_fa_method
+  - ask_fa_methods
+  - add_internal_choice
+
+  # ── STEP 4: Question to CO Mapping ─────────────────────────────────────────
   - map_question_co
+  - analyse_question
+  - override_question_bt
+  - confirm_question_mapping
+  - ask_question_mapping_rules
+
+  # ── STEP 5: Student Marks Entry ────────────────────────────────────────────
   - upload_marks_intent
+  - enter_marks_manual
+  - ask_marks_format
+  - report_absent_student
+  - validate_marks
+
+  # ── Attainment Calculations ────────────────────────────────────────────────
+  - calculate_attainment
   - explain_attainment
+  - ask_direct_attainment
+  - ask_indirect_attainment
+  - ask_final_attainment
+  - ask_fa_attainment
+  - ask_sa_attainment
+  - set_threshold
+  - set_fa_sa_weights
+  - set_direct_indirect_blend
+
+  # ── PO/PSO Attainment ──────────────────────────────────────────────────────
+  - calculate_po_attainment
   - ask_po_attainment
-  - ask_ay_history
+  - ask_pso_attainment
+  - ask_program_level_attainment
+  - ask_semester_level_attainment
+
+  # ── Gap Analysis & CAP ─────────────────────────────────────────────────────
+  - ask_gap_analysis
   - ask_low_co
-  - out_of_scope
+  - ask_cap_actions
+  - set_co_target_level
+
+  # ── Reports ────────────────────────────────────────────────────────────────
+  - generate_report
+  - ask_report_sections
+  - download_report
+  - ask_nba_sar_format
+
+  # ── History & Trends ──────────────────────────────────────────────────────
+  - ask_ay_history
+  - ask_trend_analysis
+  - compare_academic_years
+
+  # ── NBA Standards ─────────────────────────────────────────────────────────
+  - ask_nba_standard
+  - ask_po_list
+  - ask_attainment_levels
+  - ask_80_20_blend
+  - ask_best_n_of_m
+
+  # ── OBE Full Wizard (Steps 5-12) ──────────────────────────────────────────────
+  - obe_wizard
+  - start_obe_wizard
+  - confirm_cos
+  - provide_exam_config
+  - provide_question_mapping
+  - provide_marks
 
 entities:
   - course_code
+  - course_name
+  - course_credits
   - co_number
   - co_count
   - exam_type
   - max_marks
+  - question_number
   - question_text
   - bt_level
   - academic_year
   - po_number
+  - pso_number
   - syllabus_text
+  - threshold_value
+  - fa_weight
+  - sa_weight
+  - direct_weight
+  - indirect_weight
+  - mapping_weight
+  - student_id
+  - program_id
+  - fa_method
+  - target_level
 
 slots:
   course_id:
@@ -47,33 +141,60 @@ slots:
       conditions:
       - active_loop: null
         requested_slot: course_id
-  
+
+  course_code:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: course_code
+
+  course_name:
+    type: text
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: course_name
+
+  course_credits:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: course_credits
+
   current_co_draft:
     type: list
     influence_conversation: true
     mappings:
     - type: custom
-  
+
   syllabus_parsed:
     type: text
     influence_conversation: true
     mappings:
     - type: from_entity
       entity: syllabus_text
-  
+
   po_list:
     type: list
     influence_conversation: true
     mappings:
     - type: custom
-  
+
+  pso_list:
+    type: list
+    influence_conversation: true
+    mappings:
+    - type: custom
+
   co_count:
     type: float
     influence_conversation: true
     mappings:
     - type: from_entity
       entity: co_count
-  
+
   exam_type:
     type: categorical
     values:
@@ -89,26 +210,102 @@ slots:
     mappings:
     - type: from_entity
       entity: exam_type
-  
+
   exam_id:
     type: text
     influence_conversation: true
     mappings:
     - type: custom
-  
+
+  fa_method:
+    type: categorical
+    values:
+    - best_n_of_m
+    - simple_average
+    - weighted_average
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: fa_method
+
+  threshold_pct:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: threshold_value
+
+  fa_weight:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: fa_weight
+
+  sa_weight:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: sa_weight
+
+  direct_weight:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: direct_weight
+
+  indirect_weight:
+    type: float
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: indirect_weight
+
+  co_target_level:
+    type: categorical
+    values:
+    - Level 1
+    - Level 2
+    - Level 3
+    influence_conversation: true
+    mappings:
+    - type: from_entity
+      entity: target_level
+
   question_under_analysis:
     type: text
     influence_conversation: true
     mappings:
     - type: from_entity
       entity: question_text
-  
+
   last_attainment_query:
     type: text
     influence_conversation: true
     mappings:
     - type: custom
-  
+
+  workflow_step:
+    type: categorical
+    values:
+    - course_info
+    - syllabus
+    - po_pso_confirm
+    - co_count
+    - generate
+    - review
+    - mapping
+    - exam_config
+    - question_mapping
+    - marks_entry
+    - attainment
+    - report
+    influence_conversation: true
+    mappings:
+    - type: custom
+
   user_role:
     type: categorical
     values:
@@ -123,27 +320,216 @@ slots:
 
 responses:
   utter_greet:
-  - text: "Hello! I'm your OBE Assistant. I can help you with Course Outcomes, Program Outcomes, attainment calculations, and more. What would you like to do today?"
+  - text: |
+      Hello! I'm your **NBA/OBE Assistant** — powered by LangGraph + Rasa NLU.
+
+      I guide faculty through the complete OBE workflow:
+      **Step 1** → CO Generation | **Step 2** → CO-PO-PSO Mapping
+      **Step 3** → Exam Configuration | **Step 4** → Question→CO Mapping
+      **Step 5** → Marks Entry | **Step 6** → Attainment Calculation | **Step 7** → Reports
+
+      What would you like to do today?
 
   utter_goodbye:
-  - text: "Goodbye! Feel free to ask me anything about OBE anytime."
+  - text: "Goodbye! Your OBE data is saved. Come back anytime for attainment calculations or reports."
 
   utter_out_of_scope:
-  - text: "I'm specialized in Outcome-Based Education. I can help with CO generation, PO mapping, attainment calculations, exam analysis, and reports. Could you rephrase your question in terms of OBE?"
+  - text: |
+      I'm specialised in NBA/OBE. I can help with:
+      CO generation, CO-PO-PSO mapping, exam configuration, marks entry,
+      attainment calculation (Direct/Indirect/80:20 blend), gap analysis, and NBA reports.
+      Please rephrase your question in OBE terms.
+
+  utter_help:
+  - text: |
+      **NBA/OBE Assistant — Available Commands:**
+
+      | Step | Feature | Example |
+      |------|---------|---------|
+      | 1 | Generate COs | "Generate COs for my course" |
+      | 2 | CO-PO Mapping | "Map COs to POs" |
+      | 3 | Configure Exam | "Setup T1 exam" |
+      | 4 | Question→CO Map | "Map questions to COs" |
+      | 5 | Enter Marks | "Upload student marks" |
+      | 6 | CO Attainment | "Calculate CO attainment" |
+      | 6 | PO Attainment | "Calculate PO attainment" |
+      | 7 | Reports | "Generate NBA report" |
+      | + | Gap Analysis | "Show gap analysis" |
+      | + | Bloom Level | "What BT level is this question?" |
+      | + | NBA Standards | "Show all 12 POs" |
 
   utter_ask_course_id:
   - text: "Which course would you like to work with? Please provide the course code (e.g., CS301)."
 
+  utter_ask_course_info:
+  - text: |
+      To begin CO generation, I need:
+      1. **Course name** (e.g., Data Structures and Algorithms)
+      2. **Course code** (e.g., CS301)
+      3. **Credits** (e.g., 4)
+
+      Please provide these details.
+
+  utter_ask_syllabus:
+  - text: |
+      **Step 1 of 7 — Syllabus**
+      Please paste your complete course syllabus (unit-wise topics).
+      Minimum 50 characters required. Or type **'use existing'** if a syllabus is already saved.
+
+  utter_ask_po_pso:
+  - text: |
+      **Step 2 of 7 — PO/PSO Alignment**
+      Shall I fetch your program's POs and PSOs and align the COs to them?
+      - Reply **'yes'** to include NBA standard PO alignment
+      - Reply **'skip'** to generate COs without PO mapping
+
   utter_ask_co_count:
-  - text: "How many Course Outcomes would you like me to generate? (Recommended: 4-6)"
+  - text: |
+      **Step 3 of 7 — CO Count**
+      How many Course Outcomes do you want to generate?
+      NBA recommends **4 to 6 COs** per course.
+      Reply with **4**, **5**, or **6**.
 
   utter_ask_exam_type:
-  - text: "What type of exam is this? (T1, T2, T3, T4, T5, SEE, Assignment, Practical)"
+  - text: |
+      What type of exam is this?
+      - **T1, T2, T3, T4, T5** — Formative Assessment (FA)
+      - **SEE** — Summative End-Semester Exam (SA)
+      - **Assignment** or **Practical**
 
   utter_ask_max_marks:
-  - text: "What is the maximum marks for this exam?"
+  - text: "What is the maximum marks for this exam? (e.g., 20 for T1, 100 for SEE)"
+
+  utter_ask_question_marks:
+  - text: |
+      Please provide marks for each question.
+      Format: Q1: 10 marks, Q2: 15 marks, Q3: 25 marks
+      Also specify if there is internal choice (e.g., 'Answer 5 out of 8').
+
+  utter_ask_fa_method:
+  - text: |
+      **FA Weighting Method** — Which method does your department use?
+      1. **Best N of M** (NBA recommended) — Average of top N test scores. Default: Best 3 of 5.
+      2. **Simple average** — Sum of all test% / number of tests
+      3. **Weighted average** — T1=10%, T2=15%, T3=20%, T4=25%, T5=30%
+
+      Reply with **1**, **2**, or **3**.
+
+  utter_ask_threshold:
+  - text: |
+      **Attainment Threshold** — What percentage must a student score in a CO to be counted as 'passed'?
+      - Default: **40%** of CO max marks
+      - Options: 40%, 50%, or 60%
+
+      Reply with **40**, **50**, or **60**.
+
+  utter_ask_marks_format:
+  - text: |
+      **Student Marks Entry** — Choose your preferred format:
+      1. **Manual entry** — Type marks for each student
+      2. **CSV upload** — Columns: Student ID, Q1, Q2, Q3...
+      3. **Excel upload** — One sheet per exam
+
+      Which format would you like to use?
+
+  utter_nba_attainment_levels:
+  - text: |
+      **NBA CO Attainment Level Classification:**
+
+      | Level | Attainment % | Interpretation | NBA Status |
+      |-------|-------------|----------------|------------|
+      | Level 3 | ≥ 60% | Target fully achieved | Exceeds expectation |
+      | Level 2 | 50–59% | Target mostly achieved | Meets expectation |
+      | Level 1 | < 50% | Target not adequately met | **CAP Required** |
+
+      Faculty defines the target level BEFORE the course starts.
+
+  utter_nba_80_20_blend:
+  - text: |
+      **NBA 80:20 Direct/Indirect Blend:**
+
+      `Final_CO_att = (Direct_CO_att × 0.80) + (Indirect_CO_att × 0.20)`
+
+      - **Direct** = from exam marks (threshold-based)
+      - **Indirect** = from student survey (Likert 1–5)
+
+      Alternative blends accepted: 75:25 or 70:30
+      (must be consistent across ALL courses in the department)
+
+  utter_nba_po_list:
+  - text: |
+      **NBA Standard Program Outcomes (All 12 POs):**
+
+      | PO | Short Name | Definition |
+      |----|-----------|------------|
+      | PO1 | Engineering knowledge | Apply mathematics, science, engineering fundamentals |
+      | PO2 | Problem analysis | Identify, formulate, analyse complex engineering problems |
+      | PO3 | Design/development | Design solutions for complex engineering problems |
+      | PO4 | Conduct investigations | Use research-based knowledge and methods |
+      | PO5 | Modern tool usage | Create, select, apply appropriate techniques and tools |
+      | PO6 | Engineer & society | Assess societal, health, safety, legal issues |
+      | PO7 | Environment & sustainability | Understand impact, demonstrate sustainable development |
+      | PO8 | Ethics | Apply ethical principles and professional ethics |
+      | PO9 | Individual & teamwork | Function effectively as individual and team member |
+      | PO10 | Communication | Communicate effectively on engineering activities |
+      | PO11 | Project management | Apply engineering and management principles |
+      | PO12 | Life-long learning | Engage in independent and life-long learning |
+
+      PO1–PO8 are technical POs. PO9–PO12 are generic/professional POs.
+
+  utter_nba_best_n_of_m:
+  - text: |
+      **Best N of M FA Rule (NBA Recommended):**
+
+      `FA_CO_att(CO_x) = Average of top N values from {T1%, T2%, T3%, T4%, T5%}`
+
+      Default: **Best 3 of 5** tests.
+      This rewards student improvement across the semester.
+
+      Example: T1=60%, T2=55%, T3=75%, T4=80%, T5=70%
+      Best 3 = {75%, 80%, 70%} → FA_att = (75+80+70)/3 = **75.0%**
+
+  utter_mapping_scale:
+  - text: |
+      **CO-PO Mapping Correlation Scale (NBA Standard):**
+
+      | Value | Correlation | Rule |
+      |-------|------------|------|
+      | 3 | High | CO directly and substantially addresses this PO |
+      | 2 | Medium | CO partially addresses this PO |
+      | 1 | Low | CO slightly or indirectly relates to this PO |
+      | 0 | None | No meaningful connection — do NOT map to fill matrix |
+
+      **Quality checks:**
+      - Matrix density 30–60% non-zero cells is healthy
+      - No CO should map to more than 7 POs with weight ≥ 2
+      - PSO1 and PSO2 must each be mapped by at least 2 COs
+
+  utter_po_attainment_formula:
+  - text: |
+      **Course-Level PO Attainment Formula:**
+
+      `Course_PO_att(PO_x) = Σ(Final_CO_att(CO_i) × W(CO_i, PO_x)) / Σ(W(CO_i, PO_x))`
+
+      **Example:**
+      CO1 = 68% (weight=3), CO2 = 74% (weight=2), CO3 not mapped to PO1
+      PO1_att = [(68×3) + (74×2)] / [3+2] = [204+148] / 5 = 352/5 = **70.4%**
+
+  utter_gap_analysis_info:
+  - text: |
+      **Gap Analysis & CAP (Corrective Action Plan):**
+
+      After every attainment calculation I automatically:
+      1. Compare each CO against the faculty-defined target level
+      2. Flag COs where achieved < target as **ATTAINMENT GAP**
+      3. Identify weak questions, failing students, weak topics
+      4. Suggest corrective actions:
+         - **>15% below target**: Redesign CO, change teaching method, add remedial class
+         - **10–15% below target**: Add practice problems, increase feedback frequency
+         - **<10% below target**: Minor adjustment to question difficulty or marking scheme
 
 actions:
+  # CO Generation
   - action_start_co_generation
   - action_parse_syllabus
   - action_confirm_po_pso
@@ -153,14 +539,70 @@ actions:
   - action_regenerate_cos
   - action_regenerate_single_co
   - action_explain_co_bt
+  - action_show_bloom_verbs
+  - action_show_co_format
+
+  # Mapping
+  - action_build_mapping_matrix
+  - action_update_mapping_weight
+  - action_check_mapping_density
+  - action_show_po_definition
+  - action_confirm_mapping_matrix
+
+  # Exam Configuration
   - action_start_exam_config_form
+  - action_set_fa_method
+  - action_add_internal_choice
+  - action_show_fa_methods
+
+  # Question Mapping
   - action_analyse_question
   - action_override_question_co
+  - action_confirm_question_mapping
+  - action_show_question_mapping_table
+
+  # Marks
   - action_guide_marks_upload
+  - action_validate_marks
+  - action_handle_absent_student
+
+  # Attainment
   - action_explain_attainment
+  - action_calculate_direct_attainment
+  - action_calculate_indirect_attainment
+  - action_calculate_final_attainment
+  - action_set_threshold
+  - action_set_fa_sa_weights
+  - action_set_direct_indirect_blend
+
+  # PO/PSO Attainment
   - action_get_po_attainment
-  - action_get_ay_history
+  - action_get_pso_attainment
+  - action_get_program_level_attainment
+  - action_get_semester_level_attainment
+
+  # Gap Analysis
+  - action_run_gap_analysis
   - action_list_low_cos
+  - action_suggest_cap_actions
+  - action_set_co_target_level
+
+  # Reports
+  - action_generate_report
+  - action_show_report_sections
+  - action_download_report
+  - action_export_nba_sar
+
+  # History
+  - action_get_ay_history
+  - action_compare_academic_years
+
+  # NBA Info
+  - action_show_nba_standards
+  - action_show_po_list
+  - action_show_attainment_levels
+  - action_show_80_20_blend
+  - action_show_best_n_of_m
 
 forms:
   co_generation_form:
@@ -172,6 +614,17 @@ forms:
     required_slots:
     - exam_type
     - max_marks
+
+  attainment_config_form:
+    required_slots:
+    - threshold_pct
+    - fa_weight
+    - sa_weight
+
+  indirect_attainment_form:
+    required_slots:
+    - direct_weight
+    - indirect_weight
 
 session_config:
   session_expiration_time: 60

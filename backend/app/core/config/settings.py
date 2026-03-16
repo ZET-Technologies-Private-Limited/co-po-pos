@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     embedding_provider: str = Field(default="gemini", env="EMBEDDING_PROVIDER")
     llm_temperature: float = Field(default=0.3)
     llm_max_tokens: int = Field(default=2000)
-    llm_request_timeout_sec: float = Field(default=20.0, env="LLM_REQUEST_TIMEOUT_SEC")
+    llm_request_timeout_sec: float = Field(default=60.0, env="LLM_REQUEST_TIMEOUT_SEC")
     
     # Pinecone Vector DB
     pinecone_api_key: Optional[str] = Field(default=None, env="PINECONE_API_KEY")
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     
     # CORS
     allowed_origins: list = Field(
-        default=["http://localhost:3000", "http://localhost:8000"],
+        default=["*"],
         env="ALLOWED_ORIGINS"
     )
     
@@ -96,10 +96,22 @@ class Settings(BaseSettings):
     max_upload_size: int = Field(default=52428800, env="MAX_UPLOAD_SIZE")  # 50MB
     upload_dir: str = Field(default="uploads", env="UPLOAD_DIR")
     
-    # Academic Thresholds
-    attainment_level_3_threshold: float = Field(default=0.70)
-    attainment_level_2_threshold: float = Field(default=0.60)
-    attainment_level_1_threshold: float = Field(default=0.0)
+    # Academic Thresholds — NBA standard: L3>=60%, L2>=50%, L1<50%
+    attainment_level_3_threshold: float = Field(default=0.60, env="ATTAINMENT_LEVEL_3_THRESHOLD")
+    attainment_level_2_threshold: float = Field(default=0.50, env="ATTAINMENT_LEVEL_2_THRESHOLD")
+    attainment_level_1_threshold: float = Field(default=0.0,  env="ATTAINMENT_LEVEL_1_THRESHOLD")
+
+    # NBA OBE Calculation Settings
+    # Direct/Indirect blend: Final_CO = Direct*direct_weight + Indirect*indirect_weight
+    co_direct_weight: float = Field(default=0.80, env="CO_DIRECT_WEIGHT")
+    co_indirect_weight: float = Field(default=0.20, env="CO_INDIRECT_WEIGHT")
+    # Default CO attainment threshold (students must score >= this fraction of CO max marks)
+    co_attainment_threshold: float = Field(default=0.40, env="CO_ATTAINMENT_THRESHOLD")
+    # Best-N-of-M rule for formative assessments (T1-T5)
+    fa_best_n: int = Field(default=3, env="FA_BEST_N")   # take best N
+    fa_total_m: int = Field(default=5, env="FA_TOTAL_M")  # out of M tests
+    # CO target level for gap analysis (faculty sets target before course starts)
+    co_target_level: int = Field(default=2, env="CO_TARGET_LEVEL")  # 1/2/3
     
     class Config:
         env_file = ".env"

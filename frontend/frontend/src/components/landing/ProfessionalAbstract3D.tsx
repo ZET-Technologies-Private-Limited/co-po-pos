@@ -2,7 +2,6 @@
 
 import { useRef, useMemo, useEffect } from "react";
 import * as THREE from "three";
-import { Stars } from "@react-three/drei";
 
 // A single glowing point shader
 function ParticleBrainCloud() {
@@ -142,7 +141,6 @@ export default function ProfessionalAbstract3D() {
       <ambientLight intensity={0.1} />
       <pointLight position={[5, 5, 5]} intensity={1} color="#06B6D4" />
       <pointLight position={[-5, -5, -5]} intensity={0.5} color="#7C3AED" />
-      <Stars radius={120} depth={60} count={2000} factor={2} saturation={0} fade speed={0.3} />
       <ParticleBrainCloud />
     </>
   );

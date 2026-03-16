@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, ShieldAlert, MonitorSmartphone } from "lucide-react";
 import { staggerContainer, fadeSlideUp } from "@/lib/animations";
 import { LoginBackground } from "@/components/auth/LoginBackground";
 import { useAuthStore } from "@/lib/authStore";
+import { useUIStore } from "@/lib/uiStore";
 
 const DEPARTMENTS = ["Administration", "CSE", "ECE", "MECH", "CIVIL", "IT"];
 const ACTIVE_AYS  = ["2025-26", "2024-25", "2023-24", "2022-23"];
@@ -15,7 +16,7 @@ const MAX_ATTEMPTS = 5;
 const REMEMBER_KEY = "obe-remembered-login";
 
 const ROLE_HOME: Record<string, string> = {
-  admin: "/dashboard",
+  admin: "/admin/dashboard",
   department_head: "/dashboard",
   subject_lead: "/dashboard",
   faculty: "/faculty/dashboard",
@@ -50,6 +51,8 @@ const ROLE_META: Record<string, { label: string; desc: string; color: string }> 
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { addToast } = useUIStore();
   const { login, setActiveRole, setActiveAY, loginError, isAuthenticated } = useAuthStore();
 
   const [email, setEmail]       = useState("");
@@ -64,39 +67,46 @@ export default function LoginPage() {
   const [showRoleSelect, setShowRoleSelect] = useState(false);
   const [pendingRoles, setPendingRoles]     = useState<string[]>([]);
 
+  // Pre-selected role from left panel
+  const [selectedRole, setSelectedRole] = useState<string>("");
+
   // Inline field validation errors
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; dept?: string }>({});
   const [touched, setTouched]         = useState<{ email?: boolean; password?: boolean; dept?: boolean }>({});
 
   // Lockout state (persisted in sessionStorage for this browser session)
-  const [attempts, setAttempts]   = useState<number>(() => {
-    if (typeof window !== "undefined") return Number(sessionStorage.getItem("login_attempts") || "0");
-    return 0;
-  });
-  const [locked, setLocked]       = useState<boolean>(() => {
-    if (typeof window !== "undefined") return sessionStorage.getItem("login_locked") === "1";
-    return false;
-  });
+  const [attempts, setAttempts]   = useState<number>(0);
+  const [locked, setLocked]       = useState<boolean>(false);
 
   // Session-already-active warning
   const [showSessionWarning, setShowSessionWarning] = useState(false);
 
-  // Check if already authenticated on mount
+  // Check if already authenticated on mount + show session expired toast if redirected
   useEffect(() => {
+    const reason = searchParams.get('reason');
+    if (reason === 'session_expired') {
+      addToast('Your session has ended. Please log in again.', 'error');
+    }
     if (isAuthenticated) setShowSessionWarning(true);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, searchParams, addToast]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const remembered = localStorage.getItem(REMEMBER_KEY);
-      if (!remembered) return;
-      const parsed = JSON.parse(remembered) as { email?: string; dept?: string; ay?: string };
-      if (parsed.email) setEmail(parsed.email);
-      if (parsed.dept) setDept(parsed.dept);
-      if (parsed.ay) setAY(parsed.ay);
-      setRememberMe(true);
+      if (remembered) {
+        const parsed = JSON.parse(remembered) as { email?: string; dept?: string; ay?: string };
+        if (parsed.email) setEmail(parsed.email);
+        if (parsed.dept) setDept(parsed.dept);
+        if (parsed.ay) setAY(parsed.ay);
+        setRememberMe(true);
+      }
     } catch {}
+
+    const storedAttempts = Number(sessionStorage.getItem("login_attempts") || "0");
+    const storedLocked = sessionStorage.getItem("login_locked") === "1";
+    setAttempts(storedAttempts);
+    setLocked(storedLocked);
   }, []);
 
   const handleEmailChange = (val: string) => {
@@ -117,16 +127,20 @@ export default function LoginPage() {
     const emailErr = validateEmployeeId(email);
     const passErr  = validatePassword(password);
     const deptErr  = !dept ? "Department is required" : "";
+    const roleErr  = !selectedRole ? "Please select a role from the left panel" : "";
     setTouched({ email: true, password: true, dept: true });
     setFieldErrors({ email: emailErr, password: passErr, dept: deptErr });
-    if (emailErr || passErr || deptErr) return;
+    if (emailErr || passErr || deptErr || roleErr) {
+      if (roleErr) addToast(roleErr, "error");
+      return;
+    }
 
     setIsLoading(true);
 
     const identifier = email.trim();
     const success = await login(identifier, password, {
-      department: dept,
-      academicYear: ay,
+      // Only pass department if user selected one — backend rejects if it doesn't match DB
+      department: dept || undefined,
       rememberMe,
     });
     if (success) {
@@ -143,13 +157,20 @@ export default function LoginPage() {
 
       const { user } = useAuthStore.getState();
       if (user && user.roles.length > 1) {
-        setPendingRoles(user.roles as string[]);
-        setShowRoleSelect(true);
-        setIsLoading(false);
+        // If user pre-selected a role from the left panel and it's in their roles, use it directly
+        if (selectedRole && user.roles.includes(selectedRole as any)) {
+          setActiveAY(ay);
+          setActiveRole(selectedRole as any);
+          router.push(ROLE_HOME[selectedRole] || "/dashboard");
+        } else {
+          setPendingRoles(user.roles as string[]);
+          setShowRoleSelect(true);
+          setIsLoading(false);
+        }
       } else {
         setActiveAY(ay);
-        const role = user?.roles?.[0];
-        // F1-13: first-login redirect to forced password change
+        const role = selectedRole || user?.roles?.[0];
+        if (role) setActiveRole(role as any);
         if (user?.firstLogin) {
           router.push("/reset-password?first=1");
         } else {
@@ -213,6 +234,7 @@ export default function LoginPage() {
               return (
                 <button
                   key={role}
+                  suppressHydrationWarning
                   onClick={() => handleRoleSelect(role)}
                   className={`flex items-center justify-between px-8 py-6 border transition-all ${m.color}`}
                 >
@@ -227,6 +249,7 @@ export default function LoginPage() {
           </div>
 
           <button
+            suppressHydrationWarning
             onClick={() => { setShowRoleSelect(false); useAuthStore.getState().logout(); }}
             className="mt-8 text-sm text-white/30 hover:text-white transition-colors font-mono"
           >
@@ -265,12 +288,14 @@ export default function LoginPage() {
               </p>
               <div className="flex flex-col gap-3">
                 <button
+                  suppressHydrationWarning
                   onClick={continueExistingSession}
                   className="flex items-center justify-between px-6 py-4 bg-white text-black text-sm font-medium hover:bg-white/90 transition-colors"
                 >
                   Continue to Dashboard <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
+                  suppressHydrationWarning
                   onClick={() => { useAuthStore.getState().logout(); setShowSessionWarning(false); }}
                   className="px-6 py-4 border border-white/10 text-white/50 text-sm font-mono hover:border-white/30 hover:text-white transition-colors"
                 >
@@ -306,27 +331,35 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Role reference */}
-          <div className="flex flex-col gap-4">
-            <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest">Platform Roles</span>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-brand">Faculty</span>
-                <span className="text-white/40 font-light text-xs leading-relaxed">Manage courses, upload marks, generate COs</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-insight">Course Lead</span>
-                <span className="text-white/40 font-light text-xs leading-relaxed">Approve marks, track CO/PO attainment</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-aurora">HOD</span>
-                <span className="text-white/40 font-light text-xs leading-relaxed">Department view, reports, year-end sign-off</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-alert">Admin</span>
-                <span className="text-white/40 font-light text-xs leading-relaxed">User management, AY config, full system access</span>
-              </div>
-            </div>
+          {/* Role selector buttons */}
+          <div className="flex flex-col gap-3">
+            <span className="text-[10px] font-mono text-white/20 uppercase tracking-widest mb-1">Platform Roles — select to access</span>
+            {([
+              { role: "faculty",         label: "Faculty",      desc: "Manage courses, upload marks, generate COs",          accent: "text-brand",   border: "border-brand/30",   bg: "bg-brand/5",   dot: "bg-brand" },
+              { role: "subject_lead",    label: "Course Lead",  desc: "Approve marks, track CO/PO attainment",               accent: "text-insight", border: "border-insight/30", bg: "bg-insight/5", dot: "bg-insight" },
+              { role: "department_head", label: "HOD",          desc: "Department view, reports, year-end sign-off",          accent: "text-aurora",  border: "border-aurora/30",  bg: "bg-aurora/5",  dot: "bg-aurora" },
+              { role: "admin",           label: "Admin",        desc: "User management, AY config, full system access",       accent: "text-alert",   border: "border-alert/30",   bg: "bg-alert/5",   dot: "bg-alert" },
+            ] as const).map(({ role, label, desc, accent, border, bg, dot }) => {
+              const active = selectedRole === role;
+              return (
+                <button
+                  key={role}
+                  type="button"
+                  suppressHydrationWarning
+                  onClick={() => setSelectedRole(active ? "" : role)}
+                  className={`flex items-start gap-4 px-5 py-4 border text-left transition-all ${
+                    active ? `${border} ${bg}` : "border-white/5 hover:border-white/15"
+                  }`}
+                >
+                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${active ? dot : "bg-white/20"}`} />
+                  <div>
+                    <p className={`text-[10px] font-mono uppercase tracking-widest mb-0.5 ${active ? accent : "text-white/50"}`}>{label}</p>
+                    <p className="text-white/30 font-light text-xs leading-relaxed">{desc}</p>
+                  </div>
+                  {active && <ArrowRight className={`w-3.5 h-3.5 shrink-0 ml-auto mt-1 ${accent}`} />}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -347,6 +380,17 @@ export default function LoginPage() {
                 Secure Access
               </div>
               <h2 className="text-4xl font-display text-white">Welcome back.</h2>
+              {selectedRole && (() => {
+                const m = ROLE_META[selectedRole];
+                return m ? (
+                  <div className={`mt-4 flex items-center gap-3 px-4 py-2.5 border ${m.color.includes("brand") ? "border-brand/30 bg-brand/5" : m.color.includes("insight") ? "border-insight/30 bg-insight/5" : m.color.includes("aurora") ? "border-aurora/30 bg-aurora/5" : "border-alert/30 bg-alert/5"}`}>
+                    <span className={`text-[10px] font-mono uppercase tracking-widest ${m.color.split(" ")[0]}`}>
+                      Signing in as {m.label}
+                    </span>
+                    <span className="text-white/30 text-[10px] font-light">— {m.desc}</span>
+                  </div>
+                ) : null;
+              })()}
             </motion.div>
 
             {/* ── LOCKOUT STATE ── */}
@@ -373,13 +417,14 @@ export default function LoginPage() {
                 </div>
               </motion.div>
             ) : (
-              <motion.form variants={staggerContainer} onSubmit={handleLogin} className="flex flex-col gap-0" noValidate>
+              <motion.form variants={staggerContainer} onSubmit={handleLogin} className="flex flex-col gap-0" noValidate suppressHydrationWarning={true}>
 
                 {/* Department + AY */}
                 <motion.div variants={fadeSlideUp} className="grid grid-cols-2 gap-6 pb-6 border-b border-white/10 mb-6">
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-mono text-white/40 uppercase tracking-widest">Department</label>
                     <select
+                      suppressHydrationWarning
                       value={dept}
                       onChange={e => {
                         setDept(e.target.value);
@@ -410,6 +455,7 @@ export default function LoginPage() {
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-mono text-white/40 uppercase tracking-widest">Academic Year</label>
                     <select value={ay} onChange={e => setAY(e.target.value)}
+                      suppressHydrationWarning
                       className="bg-transparent text-white text-sm outline-none font-light border-none appearance-none w-full cursor-pointer">
                       {ACTIVE_AYS.map(a => <option key={a} value={a} className="bg-[#0a0a0f]">{a}</option>)}
                     </select>
@@ -422,6 +468,7 @@ export default function LoginPage() {
                     <Mail className="w-3 h-3" /> Employee ID
                   </label>
                   <input
+                    suppressHydrationWarning
                     type="text"
                     value={email}
                     onChange={e => handleEmailChange(e.target.value)}
@@ -448,6 +495,7 @@ export default function LoginPage() {
                   </label>
                   <div className="flex items-center gap-4">
                     <input
+                      suppressHydrationWarning
                       type={showPass ? "text" : "password"}
                       value={password}
                       onChange={e => handlePasswordChange(e.target.value)}
@@ -457,7 +505,7 @@ export default function LoginPage() {
                         touched.password && fieldErrors.password ? "border-red-500" : "border-white/20 focus:border-white"
                       }`}
                     />
-                    <button type="button" onClick={() => setShowPass(s => !s)} className="text-white/20 hover:text-white/60 transition-colors shrink-0 pb-3">
+                    <button suppressHydrationWarning type="button" onClick={() => setShowPass(s => !s)} className="text-white/20 hover:text-white/60 transition-colors shrink-0 pb-3">
                       {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
@@ -509,13 +557,14 @@ export default function LoginPage() {
                 {/* Submit */}
                 <motion.div variants={fadeSlideUp} className="flex items-center justify-between">
                   <button
+                    suppressHydrationWarning
                     type="submit"
-                    disabled={isLoading || !email.trim() || !password.trim() || !dept}
+                    disabled={isLoading || !email.trim() || !password.trim() || !dept || !selectedRole}
                     className="flex items-center gap-3 px-8 py-4 bg-white text-black font-medium text-sm hover:bg-white/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isLoading
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating</>
-                      : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+                      : <>Sign In as {selectedRole ? ROLE_META[selectedRole]?.label : "User"} <ArrowRight className="w-4 h-4" /></>}
                   </button>
                 </motion.div>
               </motion.form>

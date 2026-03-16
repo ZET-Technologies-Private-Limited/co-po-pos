@@ -107,7 +107,16 @@ export default function COPOMatrixPage() {
         const merged = { ...(existingMapping[co.co] || {}), ...(localMapping[co.co] || {}) };
         const poCodes = ALL_PO_PSO.filter(p => p.startsWith("PO") && merged[p] > 0);
         const psoCodes = ALL_PO_PSO.filter(p => p.startsWith("PSO") && merged[p] > 0);
-        await apiClient.updateCOMappings(selectedCourse, co.id, { po_codes: poCodes, pso_codes: psoCodes });
+        const poLevels: Record<string, number> = {};
+        const psoLevels: Record<string, number> = {};
+        poCodes.forEach(p => { poLevels[p] = merged[p]; });
+        psoCodes.forEach(p => { psoLevels[p] = merged[p]; });
+        await apiClient.updateCOMappings(selectedCourse, co.id, {
+          po_codes: poCodes,
+          pso_codes: psoCodes,
+          po_levels: poLevels,
+          pso_levels: psoLevels,
+        });
       }
       setLocalMapping({});
       setSaved(true);

@@ -6,11 +6,25 @@ import { Send, Sparkles, BrainCircuit, Loader2, RotateCcw } from "lucide-react";
 import apiClient from "@/lib/apiClient";
 
 const DEFAULT_SUGGESTIONS = [
+  "Start OBE wizard",
   "Show CO attainment for my course",
   "Which CO has lowest attainment?",
   "Generate PO attainment summary",
-  "List at-risk courses this semester",
 ];
+
+function newSessionId() {
+  return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function extractReply(res: any): string {
+  if (typeof res === "string") return res;
+  // LangGraph response
+  if (res?.reply) return res.reply;
+  // ThreeMessageFlowService direct response
+  if (res?.message) return res.message;
+  if (res?.response) return res.response;
+  return "No response.";
+}
 
 export default function ChatbotPage() {
   const [courses, setCourses] = useState<any[]>([]);
@@ -19,6 +33,7 @@ export default function ChatbotPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sessionIdRef = useRef<string>(newSessionId());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadCourses = useCallback(async () => {
@@ -32,9 +47,7 @@ export default function ChatbotPage() {
     }
   }, [selectedCourseId]);
 
-  useEffect(() => {
-    void loadCourses();
-  }, [loadCourses]);
+  useEffect(() => { void loadCourses(); }, [loadCourses]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,9 +61,12 @@ export default function ChatbotPage() {
     setMessages(prev => [...prev, { role: "user", text: q }]);
     setSending(true);
     try {
-      const reply = await apiClient.sendChatMessage({ message: q, course_id: selectedCourseId || undefined });
-      const assistantText = typeof reply === "string" ? reply : (reply?.reply ?? reply?.message ?? reply?.response ?? "No response.");
-      setMessages(prev => [...prev, { role: "assistant", text: assistantText }]);
+      const res = await apiClient.sendChatMessage({
+        message: q,
+        course_id: selectedCourseId || undefined,
+        session_id: sessionIdRef.current,
+      });
+      setMessages(prev => [...prev, { role: "assistant", text: extractReply(res) }]);
     } catch (e: any) {
       setError(e?.message ?? "Failed to get reply.");
       setMessages(prev => [...prev, { role: "assistant", text: "Sorry, the assistant is unavailable. Please try again." }]);
@@ -59,10 +75,24 @@ export default function ChatbotPage() {
     }
   };
 
-  const resetConversation = () => {
+  const resetConversation = async () => {
+    if (selectedCourseId) {
+      try { await apiClient.resetChatbotSession(selectedCourseId); } catch { /* ignore */ }
+    }
+    sessionIdRef.current = newSessionId();
     setMessages([]);
     setInput("");
     setError(null);
+  };
+
+  const handleCourseChange = async (courseId: string) => {
+    if (selectedCourseId && selectedCourseId !== courseId) {
+      try { await apiClient.resetChatbotSession(selectedCourseId); } catch { /* ignore */ }
+      sessionIdRef.current = newSessionId();
+      setMessages([]);
+      setError(null);
+    }
+    setSelectedCourseId(courseId);
   };
 
   return (
@@ -85,7 +115,7 @@ export default function ChatbotPage() {
             <p className="text-[10px] font-mono uppercase tracking-widest text-white/35">Course context</p>
             <select
               value={selectedCourseId}
-              onChange={e => setSelectedCourseId(e.target.value)}
+              onChange={e => handleCourseChange(e.target.value)}
               className="min-w-[240px] border border-white/10 bg-transparent px-3 py-2 text-sm text-white outline-none transition-colors hover:border-white/30"
             >
               <option value="" className="bg-[#0D1829]">General (no course)</option>

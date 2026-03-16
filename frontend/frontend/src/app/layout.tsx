@@ -28,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" style={{ scrollBehavior: "smooth" }}>
       <body
         className={`${bricolage.variable} ${jakarta.variable} ${jetbrains.variable} font-sans antialiased text-surface bg-cosmic min-h-screen`}
       >

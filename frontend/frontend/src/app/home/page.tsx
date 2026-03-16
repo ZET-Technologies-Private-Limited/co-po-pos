@@ -111,6 +111,7 @@ export default function LandingPage() {
 
           {/* ── STATS TICKER ── */}
           <motion.div
+            id="platform"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
@@ -157,7 +158,7 @@ export default function LandingPage() {
           </section>
 
           {/* ── SOLUTION — timeline list ── */}
-          <section className="min-h-screen flex flex-col justify-center py-24">
+          <section id="solutions" className="min-h-screen flex flex-col justify-center py-24">
             <motion.div
               initial={{ opacity: 0, x: -40 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -200,7 +201,7 @@ export default function LandingPage() {
           </section>
 
           {/* ── CTA ── */}
-          <section className="min-h-[70vh] flex flex-col justify-center items-center text-center py-24">
+          <section id="accreditation" className="min-h-[70vh] flex flex-col justify-center items-center text-center py-24">
             <motion.div
               initial={{ opacity: 0, y: 40 }}
               whileInView={{ opacity: 1, y: 0 }}

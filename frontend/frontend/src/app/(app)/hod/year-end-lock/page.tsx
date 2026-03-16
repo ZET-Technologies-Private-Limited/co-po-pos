@@ -59,7 +59,32 @@ export default function HODYearEndLockPage() {
               </select>
               <button onClick={() => void lock()} className="px-3 py-1 text-xs bg-alert text-white rounded">Lock AY</button>
             </div>
-            <pre className="text-xs text-white/70 whitespace-pre-wrap border border-white/10 rounded p-3">{JSON.stringify(years, null, 2)}</pre>
+            <div className="border border-white/10">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">AY Code</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Status</th>
+                      <th className="px-4 py-2 text-left text-[10px] font-mono text-white/40 uppercase">Locked By</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {years.map((y: any, i: number) => (
+                      <tr key={i} className="border-b border-white/5">
+                        <td className="px-4 py-2 text-xs text-white font-mono">{String(y?.code ?? y?.ay ?? `AY ${i + 1}`)}</td>
+                        <td className="px-4 py-2 text-xs">
+                          <span className={y?.is_locked ? "text-alert" : y?.is_active ? "text-attain" : "text-white/50"}>
+                            {y?.is_locked ? "Locked" : y?.is_active ? "Active" : "Archived"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-xs text-white/50">{y?.locked_by ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </>
         ) : null}
       </div>

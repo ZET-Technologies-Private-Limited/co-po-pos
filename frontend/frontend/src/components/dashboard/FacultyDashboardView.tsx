@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
-import { AlertCircle, Bell, CheckCircle2, Clock } from "lucide-react";
+import { AlertCircle, Bell, CheckCircle2, Clock, Plus } from "lucide-react";
 import apiClient from "@/lib/apiClient";
 import { useAuthStore } from "@/lib/authStore";
 
@@ -50,14 +50,6 @@ export function FacultyDashboardView() {
 
   useEffect(() => {
     void load();
-  }, [load]);
-
-  useEffect(() => {
-    const onFocus = () => void load();
-    if (typeof document !== "undefined" && document.addEventListener) {
-      document.addEventListener("visibilitychange", onFocus);
-      return () => document.removeEventListener("visibilitychange", onFocus);
-    }
   }, [load]);
 
   const courses = useMemo(() => {
@@ -111,11 +103,20 @@ export function FacultyDashboardView() {
 
   return (
     <div className="flex flex-col gap-8 pb-24">
-      <section className="border-b border-white/10 pb-6">
-        <h1 className="text-3xl text-white font-display">Faculty Dashboard</h1>
-        <p className="text-white/50 text-sm mt-1">
-          {dashboard?.header?.welcome_line ?? (user?.name ? `Welcome, ${user.name}` : "Welcome")} | AY {activeAY}
-        </p>
+      <section className="border-b border-white/10 pb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl text-white font-display">Faculty Dashboard</h1>
+          <p className="text-white/50 text-sm mt-1">
+            {dashboard?.header?.welcome_line ?? (user?.name ? `Welcome, ${user.name}` : "Welcome")} | AY {activeAY}
+          </p>
+        </div>
+        <Link 
+          href="/faculty/course/new"
+          className="flex items-center gap-2 bg-brand text-white text-sm font-semibold px-4 py-2 rounded-md hover:bg-brand/90 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Create Course
+        </Link>
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4">

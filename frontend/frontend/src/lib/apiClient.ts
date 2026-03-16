@@ -3,7 +3,12 @@
 // ============================================================
 import { useAuthStore } from './authStore';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
+// In the browser, use relative /api/v1 so requests go through the Next.js proxy.
+// On the server, use the full backend URL.
+const getBaseURL = () =>
+  typeof window !== 'undefined' ? '' : (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000');
 
 // Types matching backend schemas
 export interface LoginRequest {
@@ -37,6 +42,13 @@ export interface Course {
   credits: number;
   semester: number;
   description?: string;
+  course_type?: string;
+  enrolled_students?: number;
+  fa_method?: string;
+  fa_best_n?: number;
+  fa_total_components?: number;
+  fa_weight?: number;
+  sa_weight?: number;
   department?: string;
   syllabus?: string;
   program_id?: string;
@@ -89,23 +101,74 @@ export interface AttainmentResult {
 class ApiClient {
   private baseURL: string;
   private token: string | null = null;
+  private readonly nbaPoFallback = [
+    { code: "PO1",  name: "Engineering Knowledge",                         statement: "Apply knowledge of mathematics, science, engineering fundamentals and an engineering specialisation to the solution of complex engineering problems.", editable: false },
+    { code: "PO2",  name: "Problem Analysis",                               statement: "Identify, formulate, review research literature, and analyse complex engineering problems reaching substantiated conclusions using first principles of mathematics, natural sciences and engineering sciences.", editable: false },
+    { code: "PO3",  name: "Design/Development of Solutions",                statement: "Design solutions for complex engineering problems and design system components or processes that meet the specified needs with appropriate consideration for the public health and safety, and the cultural, societal, and environmental considerations.", editable: false },
+    { code: "PO4",  name: "Conduct Investigations of Complex Problems",      statement: "Use research-based knowledge and research methods including design of experiments, analysis and interpretation of data, and synthesis of the information to provide valid conclusions.", editable: false },
+    { code: "PO5",  name: "Modern Tool Usage",                              statement: "Create, select, and apply appropriate techniques, resources, and modern engineering and IT tools including prediction and modelling to complex engineering activities with an understanding of the limitations.", editable: false },
+    { code: "PO6",  name: "The Engineer and Society",                       statement: "Apply reasoning informed by the contextual knowledge to assess societal, health, safety, legal and cultural issues and the consequent responsibilities relevant to the professional engineering practice.", editable: false },
+    { code: "PO7",  name: "Environment and Sustainability",                 statement: "Understand the impact of the professional engineering solutions in societal and environmental contexts, and demonstrate the knowledge of, and need for sustainable development.", editable: false },
+    { code: "PO8",  name: "Ethics",                                         statement: "Apply ethical principles and commit to professional ethics and responsibilities and norms of the engineering practice.", editable: false },
+    { code: "PO9",  name: "Individual and Team Work",                       statement: "Function effectively as an individual, and as a member or leader in diverse teams, and in multidisciplinary settings.", editable: false },
+    { code: "PO10", name: "Communication",                                  statement: "Communicate effectively on complex engineering activities with the engineering community and with society at large.", editable: false },
+    { code: "PO11", name: "Project Management and Finance",                 statement: "Demonstrate knowledge and understanding of the engineering and management principles and apply these to one's own work, as a member and leader in a team, to manage projects and in multidisciplinary environments.", editable: false },
+    { code: "PO12", name: "Life-long Learning",                             statement: "Recognise the need for, and have the preparation and ability to engage in independent and life-long learning in the broadest context of technological change.", editable: false },
+  ];
 
   constructor() {
     this.baseURL = API_BASE_URL;
   }
 
+  private isTokenExpired(token: string): boolean {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (!payload?.exp) return true;
+      const now = Math.floor(Date.now() / 1000);
+      return payload.exp <= now;
+    } catch {
+      return true;
+    }
+  }
+
+  private clearAuthSession(): void {
+    this.token = null;
+    try {
+      if (typeof window !== 'undefined') localStorage.removeItem('auth_token');
+    } catch {
+      // noop
+    }
+    useAuthStore.setState({
+      user: null,
+      activeRole: null,
+      isAuthenticated: false,
+      loginError: 'Session expired. Please log in again.',
+      accessToken: null,
+    });
+  }
+
   private getAuthHeader(): Record<string, string> {
-    const authStore = useAuthStore.getState();
-    const token = this.token || (authStore.isAuthenticated ? localStorage.getItem('auth_token') : null);
-    
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const token = this.token || stored;
+    if (!token) return {};
+
+    if (this.isTokenExpired(token)) {
+      this.clearAuthSession();
+      return {};
+    }
+
+    return { Authorization: `Bearer ${token}` };
   }
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    opts: { suppressErrorLog?: boolean } = {}
   ): Promise<T> {
-    const url = `${this.baseURL}/api/v1${endpoint}`;
+    const base = getBaseURL();
+    const url = `${base}/api/v1${endpoint}`;
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const baseHeaders: Record<string, string> = {
       ...this.getAuthHeader(),
@@ -114,23 +177,106 @@ class ApiClient {
     if (!isFormData) {
       baseHeaders['Content-Type'] = 'application/json';
     }
-    
+
     const config: RequestInit = {
       ...options,
       headers: baseHeaders,
     };
 
     try {
-      const response = await fetch(url, config);
-      
+      let response = await fetch(url, config);
+
+      // Dev resilience: if Next proxy fails with 5xx, retry GET directly to backend.
+      if (
+        typeof window !== 'undefined' &&
+        base === '' &&
+        (config.method ?? 'GET').toUpperCase() === 'GET' &&
+        [500, 502, 503, 504].includes(response.status)
+      ) {
+        const directUrl = `${this.baseURL}/api/v1${endpoint}`;
+        try {
+          const retried = await fetch(directUrl, config);
+          response = retried;
+        } catch {
+          // Keep original response handling below.
+        }
+      }
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || `HTTP ${response.status}`);
+        const rawError = await response.text().catch(() => '');
+        let errorData: any = {};
+        try {
+          errorData = rawError ? JSON.parse(rawError) : {};
+        } catch {
+          errorData = {};
+        }
+
+        const deriveErrorMessage = (): string => {
+          if (typeof errorData?.detail === 'string' && errorData.detail.trim()) {
+            return errorData.detail;
+          }
+
+          if (Array.isArray(errorData?.detail) && errorData.detail.length > 0) {
+            const items = errorData.detail
+              .map((d: any) => {
+                if (typeof d === 'string') return d;
+                if (typeof d?.msg === 'string') {
+                  const loc = Array.isArray(d?.loc) ? d.loc.join('.') : '';
+                  return loc ? `${loc}: ${d.msg}` : d.msg;
+                }
+                return '';
+              })
+              .filter(Boolean);
+            if (items.length > 0) return items.join('; ');
+          }
+
+          if (typeof errorData?.message === 'string' && errorData.message.trim()) {
+            return errorData.message;
+          }
+
+          if (typeof rawError === 'string' && rawError.trim()) {
+            const rawTrimmed = rawError.trim();
+            if (/^<!doctype html>|^<html/i.test(rawTrimmed)) {
+              return `HTTP ${response.status}`;
+            }
+            return rawTrimmed;
+          }
+
+          return `HTTP ${response.status}`;
+        };
+
+        if (response.status === 401) {
+          const path = typeof window !== 'undefined' ? window.location.pathname : '';
+          const isAuthPage = /\/(login|register|forgot-password|student-login)/.test(path);
+          if (!isAuthPage) {
+            this.clearAuthSession();
+            if (typeof window !== 'undefined') {
+              window.location.href = '/login?reason=session_expired';
+            }
+          }
+          throw new Error('Invalid or expired token. Please log in again.');
+        }
+        if (opts.suppressErrorLog) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        throw new Error(deriveErrorMessage());
       }
 
       return await response.json();
     } catch (error) {
-      console.error(`API Error [${endpoint}]:`, error);
+      const message = error instanceof Error ? error.message : '';
+      if (/Invalid or expired token/i.test(message)) throw error;
+      if (
+        message === 'Failed to fetch' ||
+        message.includes('NetworkError') ||
+        message.includes('ERR_CONNECTION_REFUSED') ||
+        message.includes('net::ERR')
+      ) {
+        throw new Error('Cannot reach the server. Make sure the backend is running on http://127.0.0.1:8000.');
+      }
+      if (!opts.suppressErrorLog) {
+        console.error(`API Error [${endpoint}]:`, error);
+      }
       throw error;
     }
   }
@@ -146,7 +292,7 @@ class ApiClient {
     });
     
     this.token = response.access_token;
-    localStorage.setItem('auth_token', response.access_token);
+    if (typeof window !== 'undefined') localStorage.setItem('auth_token', response.access_token);
     
     return response;
   }
@@ -157,7 +303,7 @@ class ApiClient {
       body: JSON.stringify(userData),
     });
     this.token = response.access_token;
-    localStorage.setItem('auth_token', response.access_token);
+    if (typeof window !== 'undefined') localStorage.setItem('auth_token', response.access_token);
     return response;
   }
 
@@ -333,6 +479,8 @@ class ApiClient {
   async updateCOMappings(courseId: string, coId: string, data: {
     po_codes?: string[];
     pso_codes?: string[];
+    po_levels?: Record<string, number>;
+    pso_levels?: Record<string, number>;
     program_id?: string;
   }): Promise<any> {
     return this.request(`/courses/${courseId}/outcomes/${coId}/mappings`, {
@@ -349,8 +497,33 @@ class ApiClient {
     return this.request(`/courses/${courseId}/co-coverage`);
   }
 
+  async updateCOStatement(courseId: string, coId: string, data: { statement: string; bloom_level?: string }): Promise<any> {
+    return this.request(`/courses/${courseId}/outcomes/${coId}/statement`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCOHistory(courseId: string): Promise<any> {
+    return this.request(`/courses/${courseId}/co-history`, {}, { suppressErrorLog: true });
+  }
+
+  async getCOSession(courseId: string): Promise<any> {
+    return this.request(`/courses/${courseId}/co-session`, {}, { suppressErrorLog: true });
+  }
+
+  async exportNBASAR(courseId: string): Promise<Blob> {
+    const base = getBaseURL();
+    const response = await fetch(`${base}/api/v1/courses/${courseId}/outcomes/export/nba-sar`, {
+      headers: this.getAuthHeader(),
+    });
+    if (!response.ok) throw new Error(`NBA SAR export failed: ${response.statusText}`);
+    return response.blob();
+  }
+
   async exportCourseOutcomes(courseId: string, format: 'pdf' | 'csv'): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}/api/v1/courses/${courseId}/outcomes/export?format=${format}`, {
+    const base = getBaseURL();
+    const response = await fetch(`${base}/api/v1/courses/${courseId}/outcomes/export?format=${format}`, {
       headers: this.getAuthHeader(),
     });
     
@@ -359,6 +532,17 @@ class ApiClient {
     }
     
     return response.blob();
+  }
+
+  async getCOItemHistory(courseId: string, coId: string): Promise<any> {
+    return this.request(`/courses/${courseId}/outcomes/${coId}/history`);
+  }
+
+  async rollbackCO(courseId: string, coId: string, versionIndex: number = 0): Promise<any> {
+    return this.request(`/courses/${courseId}/outcomes/${coId}/rollback`, {
+      method: 'POST',
+      body: JSON.stringify({ version_index: versionIndex }),
+    });
   }
 
   // ============================================================
@@ -407,6 +591,19 @@ class ApiClient {
     return this.request(`/exams/${examId}/questions`, {
       method: 'POST',
       body: JSON.stringify({ questions }),
+    });
+  }
+
+  async uploadQuestionsFile(examId: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.request(`/exams/${examId}/questions/upload-bulk`, {
+      method: 'POST',
+      headers: {
+        ...this.getAuthHeader(),
+      },
+      body: formData,
     });
   }
 
@@ -514,26 +711,34 @@ class ApiClient {
     return this.request(`/attainment/weighted/${courseId}?threshold_pct=${thresholdPct}`);
   }
 
-  async calculatePOAttainment(courseId: string, programId: string): Promise<any> {
-    return this.request(`/attainment/calculate-po?course_id=${courseId}&program_id=${programId}`, {
+  async calculatePOAttainment(courseId: string, programId?: string): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/attainment/calculate-po?${params.toString()}`, {
       method: 'POST',
     });
   }
 
-  async calculatePSOAttainment(courseId: string, programId: string): Promise<any> {
-    return this.request(`/attainment/calculate-pso?course_id=${courseId}&program_id=${programId}`, {
+  async calculatePSOAttainment(courseId: string, programId?: string): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/attainment/calculate-pso?${params.toString()}`, {
       method: 'POST',
     });
   }
 
-  async runFullAttainmentPipeline(courseId: string, programId: string, thresholdPct: number = 0.6): Promise<any> {
-    return this.request(`/attainment/full-pipeline?course_id=${courseId}&program_id=${programId}&threshold_pct=${thresholdPct}`, {
+  async runFullAttainmentPipeline(courseId: string, programId: string | undefined, thresholdPct: number = 0.6): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId, threshold_pct: String(thresholdPct) });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/attainment/full-pipeline?${params.toString()}`, {
       method: 'POST',
     });
   }
 
-  async queueAttainmentPipeline(courseId: string, programId: string, thresholdPct: number = 0.6): Promise<any> {
-    return this.request(`/attainment/full-pipeline/async?course_id=${courseId}&program_id=${programId}&threshold_pct=${thresholdPct}`, {
+  async queueAttainmentPipeline(courseId: string, programId: string | undefined, thresholdPct: number = 0.6): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId, threshold_pct: String(thresholdPct) });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/attainment/full-pipeline/async?${params.toString()}`, {
       method: 'POST',
     });
   }
@@ -551,6 +756,69 @@ class ApiClient {
     return this.request(`/attainment/students/${courseId}${params}`);
   }
 
+  async setIndirectAttainment(courseId: string, coId: string, surveyAvg: number, scale: number = 5.0): Promise<any> {
+    return this.request(`/attainment/indirect?course_id=${courseId}&co_id=${coId}&survey_avg=${surveyAvg}&scale=${scale}`, {
+      method: 'POST',
+    });
+  }
+
+  async getIndirectAttainments(courseId: string): Promise<any> {
+    return this.request(`/attainment/indirect/${courseId}`);
+  }
+
+  async getGapAnalysis(courseId: string, thresholdPct: number = 0.4): Promise<any> {
+    return this.request(`/attainment/gap-analysis/${courseId}?threshold_pct=${thresholdPct}`);
+  }
+
+  async getOBEWorkflow(courseId: string, params?: {
+    threshold_pct?: number;
+    fa_method?: 'best_n_of_m' | 'simple_avg' | 'weighted';
+    fa_best_n?: number;
+    fa_weight?: number;
+    sa_weight?: number;
+    direct_weight?: number;
+    indirect_weight?: number;
+  }): Promise<any> {
+    const q = new URLSearchParams();
+    if (params?.threshold_pct != null) q.append('threshold_pct', String(params.threshold_pct));
+    if (params?.fa_method) q.append('fa_method', params.fa_method);
+    if (params?.fa_best_n != null) q.append('fa_best_n', String(params.fa_best_n));
+    if (params?.fa_weight != null) q.append('fa_weight', String(params.fa_weight));
+    if (params?.sa_weight != null) q.append('sa_weight', String(params.sa_weight));
+    if (params?.direct_weight != null) q.append('direct_weight', String(params.direct_weight));
+    if (params?.indirect_weight != null) q.append('indirect_weight', String(params.indirect_weight));
+    const qs = q.toString();
+    try {
+      return await this.request(`/courses/${courseId}/obe-workflow${qs ? `?${qs}` : ''}`, {}, { suppressErrorLog: true });
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      if (/not found|http 404/i.test(msg)) {
+        try {
+          return await this.request(`/attainment/course/${courseId}`, {}, { suppressErrorLog: true });
+        } catch (fallbackError: any) {
+          const fallbackMsg = String(fallbackError?.message || '');
+          if (/not found|http 404/i.test(fallbackMsg)) {
+            return {
+              co_attainments: [],
+              po_attainments: [],
+              config: {},
+              nba_formulas: {},
+              summary: {
+                total_cos: 0,
+                cos_attained: 0,
+                cos_gap: 0,
+                avg_final_attainment: 0,
+                overall_level: 'Level 1',
+              },
+            };
+          }
+          throw fallbackError;
+        }
+      }
+      throw error;
+    }
+  }
+
   // ============================================================
   // PROGRAM OUTCOMES
   // ============================================================
@@ -564,6 +832,31 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  // NBA fixed POs — returned from backend seed endpoint
+  async getNBAPOs(): Promise<any[]> {
+    try {
+      return await this.request('/nba/pos', {}, { suppressErrorLog: true });
+    } catch {
+      return this.nbaPoFallback;
+    }
+  }
+
+  // Department PSOs — HOD-managed
+  async getDepartmentPSOs(department: string): Promise<any[]> {
+    const cleanedDepartment = String(department || '').trim();
+    if (!cleanedDepartment) return [];
+    try {
+      return await this.request(`/nba/psos/${encodeURIComponent(cleanedDepartment)}`, {}, { suppressErrorLog: true });
+    } catch {
+      try {
+        const deptProgram = `DEPT:${cleanedDepartment.toUpperCase()}`;
+        return await this.request(`/programs/${encodeURIComponent(deptProgram)}/pso`, {}, { suppressErrorLog: true });
+      } catch {
+        return [];
+      }
+    }
   }
 
   async getProgramOutcomes(programId: string): Promise<any[]> {
@@ -619,14 +912,27 @@ class ApiClient {
   // MAPPING
   // ============================================================
   
-  async mapCOToPO(courseId: string, programId: string, threshold: number = 0.3): Promise<any> {
-    return this.request(`/map-co-po?course_id=${courseId}&program_id=${programId}&threshold=${threshold}`, {
+  async mapCOToPO(courseId: string, programId: string | undefined, threshold: number = 0.3): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId, threshold: String(threshold) });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/map-co-po?${params.toString()}`, {
       method: 'POST',
     });
   }
 
-  async mapCOToPSO(courseId: string, programId: string, threshold: number = 0.3): Promise<any> {
-    return this.request(`/map-co-pso?course_id=${courseId}&program_id=${programId}&threshold=${threshold}`, {
+  /** LLM-powered CO-PO mapping: uses Gemini/OpenAI to reason about alignment levels */
+  async mapCOToPOWithLLM(courseId: string, programId?: string): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/map-co-po/llm?${params.toString()}`, {
+      method: 'POST',
+    });
+  }
+
+  async mapCOToPSO(courseId: string, programId: string | undefined, threshold: number = 0.3): Promise<any> {
+    const params = new URLSearchParams({ course_id: courseId, threshold: String(threshold) });
+    if (programId) params.set('program_id', programId);
+    return this.request(`/map-co-pso?${params.toString()}`, {
       method: 'POST',
     });
   }
@@ -642,7 +948,8 @@ class ApiClient {
   }
 
   async downloadReport(courseId: string, format: 'pdf' | 'excel' | 'nba'): Promise<Blob> {
-    const response = await fetch(`${this.baseURL}/api/v1/reports/${courseId}/download?format=${format}`, {
+    const base = getBaseURL();
+    const response = await fetch(`${base}/api/v1/reports/${courseId}/download?format=${format}`, {
       headers: this.getAuthHeader(),
     });
     
@@ -673,6 +980,8 @@ class ApiClient {
     message: string;
     course_id?: string;
     session_id?: string;
+    message_number?: 1 | 2 | 3;
+    text?: string;
   }): Promise<any> {
     return this.request('/chatbot/message', {
       method: 'POST',
@@ -782,8 +1091,9 @@ class ApiClient {
     });
   }
 
-  async getLeadCOAttainment(params?: { course_id?: string; academic_year?: string }): Promise<any> {
+  async getLeadCOAttainment(params?: { department?: string; course_id?: string; academic_year?: string }): Promise<any> {
     const searchParams = new URLSearchParams();
+    if (params?.department) searchParams.append('department', params.department);
     if (params?.course_id) searchParams.append('course_id', params.course_id);
     if (params?.academic_year) searchParams.append('academic_year', params.academic_year);
     const queryString = searchParams.toString();
@@ -810,8 +1120,10 @@ class ApiClient {
     return this.request(`/lead/po-attainment${queryString ? `?${queryString}` : ''}`);
   }
 
-  async getLeadAYComparison(params?: { department?: string; years?: number }): Promise<any> {
+  async getLeadAYComparison(params?: { course_id?: string; department?: string; years?: number }): Promise<any> {
     const searchParams = new URLSearchParams();
+    // Backend requires course_id; department+years are fallback for HOD view
+    if (params?.course_id) searchParams.append('course_id', params.course_id);
     if (params?.department) searchParams.append('department', params.department);
     if (params?.years) searchParams.append('years', String(params.years));
     const queryString = searchParams.toString();
@@ -827,9 +1139,14 @@ class ApiClient {
   }
 
   async generateLeadReport(payload: Record<string, any>): Promise<any> {
-    return this.request('/lead/reports/generate', {
+    const searchParams = new URLSearchParams();
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      searchParams.append(key, String(value));
+    });
+    const queryString = searchParams.toString();
+    return this.request(`/lead/reports/generate${queryString ? `?${queryString}` : ''}`, {
       method: 'POST',
-      body: JSON.stringify(payload),
     });
   }
 
@@ -842,8 +1159,11 @@ class ApiClient {
     return this.request(`/lead/reports/download${queryString ? `?${queryString}` : ''}`);
   }
 
-  async getLeadReportHistory(limit: number = 50): Promise<any> {
-    return this.request(`/lead/reports/history?limit=${limit}`);
+  async getLeadReportHistory(limit: number = 50, department?: string): Promise<any> {
+    const params = new URLSearchParams();
+    if (department) params.append('department', department);
+    params.append('limit', String(limit));
+    return this.request(`/lead/reports/history?${params.toString()}`);
   }
 
   // ============================================================
@@ -896,11 +1216,11 @@ class ApiClient {
     return this.request(`/audit-log?limit=${limit}`);
   }
 
-  async getThresholds(): Promise<{ level2: number; level3: number }> {
+  async getThresholds(): Promise<{ level2: number; level3: number; pass_threshold: number }> {
     return this.request('/settings/thresholds');
   }
 
-  async setThresholds(data: { level2?: number; level3?: number }): Promise<any> {
+  async setThresholds(data: { level2?: number; level3?: number; pass_threshold?: number }): Promise<any> {
     return this.request('/settings/thresholds', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -924,14 +1244,12 @@ class ApiClient {
   }
 
   async uploadFile(file: File, bucket: string = 'obe-uploads', folder: string = 'uploads'): Promise<any> {
+    const base = getBaseURL();
     const formData = new FormData();
     formData.append('file', file);
-    
     return this.request(`/files/upload?bucket=${bucket}&folder=${folder}`, {
       method: 'POST',
-      headers: {
-        ...this.getAuthHeader(),
-      },
+      headers: { ...this.getAuthHeader() },
       body: formData,
     });
   }
@@ -946,7 +1264,7 @@ class ApiClient {
   
   logout(): void {
     this.token = null;
-    localStorage.removeItem('auth_token');
+    if (typeof window !== 'undefined') localStorage.removeItem('auth_token');
   }
 }
 

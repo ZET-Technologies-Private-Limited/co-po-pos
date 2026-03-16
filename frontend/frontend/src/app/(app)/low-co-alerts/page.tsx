@@ -16,18 +16,27 @@ export default function LowCOAlertsPage() {
   const dept = user?.department || "CSE";
   const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const data = await apiClient.getCourseLeadDashboard(dept, activeAY || "2024-25");
-      setDashboard(data);
-    } catch {
+      if (activeRole === "faculty") {
+        const data = await apiClient.getFacultyDashboard({ ay_code: activeAY || "2024-25" });
+        setDashboard(data);
+      } else {
+        const data = await apiClient.getCourseLeadDashboard(dept, activeAY || "2024-25");
+        setDashboard(data);
+      }
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
       setDashboard(null);
     } finally {
       setLoading(false);
     }
-  }, [dept, activeAY]);
+  }, [dept, activeAY, activeRole]);
 
   useEffect(() => {
     void load();
@@ -36,31 +45,81 @@ export default function LowCOAlertsPage() {
   const isReadOnly = activeRole === "faculty";
 
   const alerts = useMemo(() => {
-    const table = dashboard?.co_health_table ?? [];
+    const table = activeRole === "faculty" ? (dashboard?.courses_table?.rows ?? []) : (dashboard?.co_health_table ?? []);
     const result: Array<{
       courseId: string; courseCode: string; courseName: string;
       co: string; pct: number; level: number;
       hasRemedial: boolean; remedialText: string;
     }> = [];
-    table.forEach((row: any) => {
-      const [code = "", name = ""] = (row.course ?? "").split(" - ");
-      (row.cos ?? []).forEach((c: any) => {
-        if (c.level === "L1") {
-          result.push({
-            courseId: row.course_id ?? "", courseCode: code, courseName: name,
-            co: c.code ?? "", pct: c.percentage ?? 0, level: 1,
-            hasRemedial: false, remedialText: "",
+    
+    if (activeRole === "faculty") {
+       table.forEach((row: any) => {
+          (row.co_alerts ?? []).forEach((alert: any) => {
+             if (alert.level === 1) {
+                result.push({
+                   courseId: row.id ?? "", courseCode: row.code ?? "", courseName: row.name ?? "",
+                   co: alert.co_code ?? "", pct: alert.attainment ?? 0, level: 1,
+                   hasRemedial: false, remedialText: "",
+                });
+             }
           });
-        }
-      });
-    });
+       });
+    } else {
+        table.forEach((row: any) => {
+          const [code = "", name = ""] = (row.course ?? "").split(" - ");
+          (row.cos ?? []).forEach((c: any) => {
+            if (c.level === "L1") {
+              result.push({
+                courseId: row.course_id ?? "", courseCode: code, courseName: name,
+                co: c.code ?? "", pct: c.percentage ?? 0, level: 1,
+                hasRemedial: false, remedialText: "",
+              });
+            }
+          });
+        });
+    }
     return result;
-  }, [dashboard]);
+  }, [dashboard, activeRole]);
 
   if (loading) {
     return (
       <AccessGate feature="low_co_alerts" deny="lock">
         <div className="max-w-5xl mx-auto pb-32 py-8"><p className="text-white/60">Loading alerts…</p></div>
+      </AccessGate>
+    );
+  }
+
+  if (error) {
+    const isPermissionError = error.toLowerCase().includes("requires") || error.toLowerCase().includes("permission");
+    return (
+      <AccessGate feature="low_co_alerts" deny="lock">
+        <div className="max-w-5xl mx-auto pb-32 py-8">
+          <div className="bg-alert/10 border border-alert/30 rounded-lg p-6">
+            <h2 className="text-lg font-semibold text-alert mb-2">
+              {isPermissionError ? "Access Denied" : "Unable to Load Course Lead Dashboard"}
+            </h2>
+            <p className="text-white/60 text-sm">{error}</p>
+            {isPermissionError && (
+              <p className="text-white/40 text-xs mt-3">
+                This feature requires Course Lead, Department Head, or Admin role. Please contact your administrator if you should have access.
+              </p>
+            )}
+            <button
+              onClick={load}
+              className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded text-sm transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </AccessGate>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <AccessGate feature="low_co_alerts" deny="lock">
+        <div className="max-w-5xl mx-auto pb-32 py-8"><p className="text-white/60">No data available</p></div>
       </AccessGate>
     );
   }

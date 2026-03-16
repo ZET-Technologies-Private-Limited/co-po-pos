@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/lib/authStore";
 import { AccessGate } from "@/components/auth/AccessGate";
+import { motion } from "framer-motion";
+import { staggerContainer, fadeSlideUp } from "@/lib/animations";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import apiClient from "@/lib/apiClient";
 
 export default function LeadRemedialActionsPage() {
@@ -26,9 +29,7 @@ export default function LeadRemedialActionsPage() {
       }
     }
     void load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [activeAY]);
 
   const weakItems = useMemo(() => {
@@ -36,26 +37,65 @@ export default function LeadRemedialActionsPage() {
     return list.filter((x: any) => Number(x?.attainment_percentage ?? x?.percentage ?? 0) < 60);
   }, [data]);
 
+  const REMEDIAL_SUGGESTIONS: Record<string, string> = {
+    L1: "Conduct extra problem-solving sessions, targeted quizzes, and peer tutoring.",
+    default: "Review teaching methodology, provide additional practice materials.",
+  };
+
   return (
     <AccessGate feature="remedial_actions" deny="lock">
-      <div className="max-w-6xl mx-auto pb-24 space-y-6">
-        <h1 className="text-3xl text-white font-display">Lead Remedial Actions</h1>
-        <p className="text-white/50 text-sm">Derived from live CO attainment data (below threshold).</p>
-        {loading ? <p className="text-white/60">Loading...</p> : null}
-        {error ? <p className="text-alert">{error}</p> : null}
-        {!loading && !error ? (
-          <div className="space-y-3">
-            {weakItems.length === 0 ? <p className="text-white/40 text-sm">No weak COs found.</p> : null}
-            {weakItems.map((item: any, idx: number) => (
-              <div key={idx} className="border border-white/10 rounded p-3">
-                <p className="text-white text-sm">{item?.course_code || "Course"} - {item?.co || item?.co_id || "CO"}</p>
-                <p className="text-white/60 text-xs mt-1">Attainment: {item?.attainment_percentage ?? item?.percentage ?? "N/A"}%</p>
-                <p className="text-white/50 text-xs mt-1">Suggested action: extra problem-solving session + targeted quiz.</p>
+      <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="max-w-6xl mx-auto pb-24 space-y-6">
+        <motion.header variants={fadeSlideUp} className="border-b border-white/5 pb-4">
+          <h1 className="text-3xl font-display text-white">Remedial Actions</h1>
+          <p className="text-white/50 mt-1 text-sm">COs below 60% attainment threshold · AY {activeAY}</p>
+        </motion.header>
+
+        {loading && <p className="text-white/60">Loading...</p>}
+        {error && <p className="text-alert text-sm">{error}</p>}
+
+        {!loading && !error && (
+          <motion.section variants={fadeSlideUp}>
+            {weakItems.length === 0 ? (
+              <div className="flex items-center gap-3 py-12 text-attain">
+                <CheckCircle2 className="w-6 h-6" />
+                <p className="text-sm">No weak COs found — all COs above threshold.</p>
               </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
+            ) : (
+              <div className="space-y-3">
+                {weakItems.map((item: any, idx: number) => {
+                  const pct = Number(item.attainment_percentage ?? item.percentage ?? 0);
+                  const level = pct >= 40 ? "L2" : "L1";
+                  return (
+                    <div key={idx} className="border border-white/10 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <AlertTriangle className="w-4 h-4 text-alert shrink-0" />
+                          <div>
+                            <p className="text-white text-sm font-medium">
+                              {item.course_code ?? "Course"} — {item.co_id ?? item.co ?? "CO"}
+                            </p>
+                            <p className="text-white/50 text-xs mt-0.5">{item.co_statement ?? ""}</p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-alert text-lg font-display">{pct}%</p>
+                          <p className="text-[10px] font-mono text-white/30 uppercase">{level}</p>
+                        </div>
+                      </div>
+                      <div className="h-0.5 bg-white/5">
+                        <div className="h-full bg-alert/60" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-white/50 text-xs">
+                        Suggested: {REMEDIAL_SUGGESTIONS[level] ?? REMEDIAL_SUGGESTIONS.default}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.section>
+        )}
+      </motion.div>
     </AccessGate>
   );
 }

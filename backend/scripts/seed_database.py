@@ -3,15 +3,18 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 import sys
-sys.path.insert(0, '/vercel/share/v0-project/backend')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-from app.core.database.models import Base
 from app.core.database.models import (
-    User, Course, CourseOutcome, Exam, ExamQuestion, StudentMarks,
+    Base, User, Course, CourseOutcome, Exam, ExamQuestion, StudentMarks,
     ProgramOutcome, StudentEnrollment, Student, Department, Program
+)
+from app.core.config.constants import (
+    UserRole, BloomTaxonomyLevel, OutcomeType, ExamType, QuestionType
 )
 from app.core.security.password_hashing import hash_password
 from app.core.config.settings import get_settings
@@ -55,17 +58,37 @@ async def seed_database():
             id=str(uuid.uuid4()),
             username="admin",
             email="admin@university.edu",
-            password_hash=hash_password("admin123456"),
+            hashed_password=hash_password("admin123456"),
             full_name="Dr. Admin User",
             role="admin"
         )
         session.add(admin)
         
+        hod = User(
+            id=str(uuid.uuid4()),
+            username="hod_cs",
+            email="hod@university.edu",
+            hashed_password=hash_password("hod123456"),
+            full_name="Dr. Head of Department",
+            role="hod"
+        )
+        session.add(hod)
+        
+        course_lead = User(
+            id=str(uuid.uuid4()),
+            username="dr_johnson",
+            email="courselead@university.edu",
+            hashed_password=hash_password("faculty123456"),
+            full_name="Dr. Course Lead",
+            role="course_lead"
+        )
+        session.add(course_lead)
+        
         faculty1 = User(
             id=str(uuid.uuid4()),
-            username="faculty1",
+            username="dr_smith",
             email="faculty1@university.edu",
-            password_hash=hash_password("faculty123456"),
+            hashed_password=hash_password("faculty123456"),
             full_name="Dr. Faculty One",
             role="faculty"
         )
@@ -75,7 +98,7 @@ async def seed_database():
             id=str(uuid.uuid4()),
             username="faculty2",
             email="faculty2@university.edu",
-            password_hash=hash_password("faculty123456"),
+            hashed_password=hash_password("faculty123456"),
             full_name="Prof. Faculty Two",
             role="faculty"
         )
@@ -123,7 +146,7 @@ async def seed_database():
             credits=4,
             semester=2,
             description="Comprehensive study of data structures including arrays, linked lists, trees, graphs",
-            faculty_id=faculty1.id
+            created_by=faculty1.id
         )
         session.add(course1)
         
@@ -135,7 +158,7 @@ async def seed_database():
             credits=4,
             semester=3,
             description="Analysis and design of algorithms, complexity analysis, sorting, searching, dynamic programming",
-            faculty_id=faculty2.id
+            created_by=faculty2.id
         )
         session.add(course2)
         
@@ -144,9 +167,9 @@ async def seed_database():
         co1 = CourseOutcome(
             id=str(uuid.uuid4()),
             course_id=course1_id,
-            co_code="CO1",
-            co_statement="Understand fundamental data structures and their operations",
-            bloom_level="Understand",
+            code="CO1",
+            statement="Understand fundamental data structures and their operations",
+            bloom_level=BloomTaxonomyLevel.UNDERSTAND,
             description="Students will understand arrays, lists, stacks, queues"
         )
         session.add(co1)
@@ -154,9 +177,9 @@ async def seed_database():
         co2 = CourseOutcome(
             id=str(uuid.uuid4()),
             course_id=course1_id,
-            co_code="CO2",
-            co_statement="Apply data structures to solve real-world problems",
-            bloom_level="Apply",
+            code="CO2",
+            statement="Apply data structures to solve real-world problems",
+            bloom_level=BloomTaxonomyLevel.APPLY,
             description="Students can implement data structures in practical applications"
         )
         session.add(co2)
@@ -164,9 +187,9 @@ async def seed_database():
         co3 = CourseOutcome(
             id=str(uuid.uuid4()),
             course_id=course2_id,
-            co_code="CO1",
-            co_statement="Analyze algorithm complexity and efficiency",
-            bloom_level="Analyze",
+            code="CO1",
+            statement="Analyze algorithm complexity and efficiency",
+            bloom_level=BloomTaxonomyLevel.ANALYZE,
             description="Students can analyze time and space complexity of algorithms"
         )
         session.add(co3)
@@ -174,9 +197,9 @@ async def seed_database():
         co4 = CourseOutcome(
             id=str(uuid.uuid4()),
             course_id=course2_id,
-            co_code="CO2",
-            co_statement="Design and implement efficient algorithms",
-            bloom_level="Create",
+            code="CO2",
+            statement="Design and implement efficient algorithms",
+            bloom_level=BloomTaxonomyLevel.CREATE,
             description="Students can design optimal solutions using various algorithm techniques"
         )
         session.add(co4)
@@ -185,17 +208,17 @@ async def seed_database():
         
         po1 = ProgramOutcome(
             id=str(uuid.uuid4()),
-            program_id=prog_id,
-            po_code="PO1",
-            po_statement="Engineering knowledge and problem solving"
+            code="PO1",
+            statement="Engineering knowledge and problem solving",
+            program="B.Tech-CSE"
         )
         session.add(po1)
         
         po2 = ProgramOutcome(
             id=str(uuid.uuid4()),
-            program_id=prog_id,
-            po_code="PO2",
-            po_statement="Design and development of solutions"
+            code="PO2",
+            statement="Design and development of solutions",
+            program="B.Tech-CSE"
         )
         session.add(po2)
         

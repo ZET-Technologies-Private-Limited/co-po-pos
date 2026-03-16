@@ -41,15 +41,6 @@ export default function AdminCOLibraryPage() {
         (c.course_name ?? c.name ?? "").toLowerCase().includes(q))
     );
   }, [courses, search, deptFilter]);
-    setSaving(false); setShowModal(false);
-  };
-
-  const addCORow = () => setForm(p => ({
-    ...p, cos: [...p.cos, { co: `CO${p.cos.length + 1}`, desc: "", bloomCode: "L3", poMaps: "" }]
-  }));
-  const removeCORow = (i: number) => setForm(p => ({ ...p, cos: p.cos.filter((_, j) => j !== i) }));
-  const updateCORow = (i: number, patch: Partial<CORow>) =>
-    setForm(p => ({ ...p, cos: p.cos.map((c, j) => j === i ? { ...c, ...patch } : c) }));
 
   // Excel/CSV import
   const deptOptions = useMemo(() => {
@@ -58,11 +49,24 @@ export default function AdminCOLibraryPage() {
     return ["all", ...Array.from(set)];
   }, [courses]);
 
-  if (loading) return (<AccessGate feature="co_library_manage" deny="lock"><div className="max-w-6xl mx-auto pb-32 py-8"><p className="text-white/60">Loading courses...</p></div></AccessGate>);
-  if (error) return (<AccessGate feature="co_library_manage" deny="lock"><div className="max-w-6xl mx-auto pb-32 py-8"><p className="text-alert">{error}</p></div></AccessGate>);
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="max-w-6xl mx-auto pb-32 py-8">
+          <p className="text-white/60">Loading courses...</p>
+        </div>
+      );
+    }
+    
+    if (error) {
+      return (
+        <div className="max-w-6xl mx-auto pb-32 py-8">
+          <p className="text-alert">{error}</p>
+        </div>
+      );
+    }
 
-  return (
-    <AccessGate feature="co_library_manage" deny="lock">
+    return (
       <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="max-w-6xl mx-auto pb-32">
         <motion.div variants={fadeSlideUp} className="flex justify-between items-end pb-8 border-b border-white/5">
           <div>
@@ -115,6 +119,12 @@ export default function AdminCOLibraryPage() {
           )}
         </div>
       </motion.div>
+    );
+  };
+
+  return (
+    <AccessGate feature="co_library_manage" deny="lock">
+      {renderContent()}
     </AccessGate>
   );
 }

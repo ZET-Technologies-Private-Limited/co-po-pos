@@ -48,10 +48,10 @@ export const PERMISSIONS: Record<string, Record<Role, PermissionLevel>> = {
   marks_lock_submit:        { faculty: "yes",  subject_lead: "no",   department_head: "no",   admin: "no",   student: "no"   },
   co_attainment:            { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
   marks_approval:           { faculty: "no",   subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
-  po_attainment:            { faculty: "no",   subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
-  pso_attainment:           { faculty: "no",   subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
+  po_attainment:            { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
+  pso_attainment:           { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
   ay_trend:                 { faculty: "no",   subject_lead: "no",   department_head: "yes",  admin: "yes",  student: "no"   },
-  low_co_alerts:            { faculty: "view", subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
+  low_co_alerts:            { faculty: "no",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
   remedial_entry:           { faculty: "yes",  subject_lead: "view", department_head: "yes",  admin: "yes",  student: "no"   },
   student_report:           { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "own"  },
   co_attainment_chart:      { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "view" },
@@ -60,6 +60,7 @@ export const PERMISSIONS: Record<string, Record<Role, PermissionLevel>> = {
   export_pdf:               { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
   export_excel:             { faculty: "own",  subject_lead: "yes",  department_head: "yes",  admin: "yes",  student: "no"   },
   nba_export:               { faculty: "no",   subject_lead: "no",   department_head: "yes",  admin: "yes",  student: "no"   },
+  admin_dashboard:          { faculty: "no",   subject_lead: "no",   department_head: "no",   admin: "yes",  student: "no"   },
   user_management:          { faculty: "no",   subject_lead: "no",   department_head: "no",   admin: "yes",  student: "no"   },
   ay_setup:                 { faculty: "no",   subject_lead: "no",   department_head: "no",   admin: "yes",  student: "no"   },
   threshold_config:         { faculty: "no",   subject_lead: "no",   department_head: "view", admin: "yes",  student: "no"   },
@@ -127,7 +128,7 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       activeRole: null,
-      activeAY: "2024-25",
+      activeAY: "2025-26",
       isAuthenticated: false,
       loginError: null,
       accessToken: null,
@@ -144,15 +145,14 @@ export const useAuthStore = create<AuthState>()(
         if (isEmail) {
           payload.email = trimmed;
         } else {
-          // Treat as employee_id when not an email
           payload.employee_id = trimmed;
         }
 
+        // Send department only if provided — backend rejects if it doesn't match stored value.
+        // Do NOT send academic_year — backend validates it against Redis AY configs
+        // and will reject valid years that aren't seeded yet.
         if (options?.department) {
           payload.department = options.department;
-        }
-        if (options?.academicYear) {
-          payload.academic_year = options.academicYear;
         }
 
         try {

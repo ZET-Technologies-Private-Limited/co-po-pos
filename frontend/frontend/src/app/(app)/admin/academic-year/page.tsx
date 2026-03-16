@@ -113,10 +113,14 @@ export default function AcademicYearConfigPage() {
     })));
   }, [rows]);
 
-  const semesters: SemesterRow[] = useMemo(() => [
-    { id: "s1", ay: currentCode, semesterName: "Sem 1", startDate: rows[0]?.startDate ?? "", endDate: rows[0]?.endDate ?? "", coursesAssigned: 0 },
-    { id: "s2", ay: currentCode, semesterName: "Sem 2", startDate: rows[0]?.startDate ?? "", endDate: rows[0]?.endDate ?? "", coursesAssigned: 0 },
-  ], [currentCode, rows]);
+  const [semesters, setSemesters] = useState<SemesterRow[]>([]);
+
+  useEffect(() => {
+    setSemesters([
+      { id: "s1", ay: currentCode, semesterName: "Sem 1", startDate: rows[0]?.startDate ?? "", endDate: rows[0]?.endDate ?? "", coursesAssigned: 0 },
+      { id: "s2", ay: currentCode, semesterName: "Sem 2", startDate: rows[0]?.startDate ?? "", endDate: rows[0]?.endDate ?? "", coursesAssigned: 0 },
+    ]);
+  }, [currentCode, rows]);
 
   const latestRows = useMemo(() => rows.slice(0, 3), [rows]);
 

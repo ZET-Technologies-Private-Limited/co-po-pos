@@ -78,8 +78,7 @@ class SemanticMappingService:
                 self.logger.warning("No POs found for program", program_id=program_id)
                 return {"success": False, "message": "No POs found"}
             
-            # Dynamic mapping selection per CO:
-            # combines semantic + lexical signals and chooses adaptive cutoffs
+            # Dynamic mapping selection per CO (no forced minimum levels).
             mappings = []
             for co in cos:
                 scored: List[Tuple[ProgramOutcome, float]] = []
@@ -314,28 +313,28 @@ class SemanticMappingService:
             return {"success": False, "error": str(e)}
     
     async def _calculate_similarity(self, text1: str, text2: str) -> float:
-        """Calculate cosine similarity between two texts using embeddings"""
+        """Calculate cosine similarity between two texts using embeddings, with keyword fallback."""
         try:
             embedding1 = await embedding_service.embed_text(text1)
             embedding2 = await embedding_service.embed_text(text2)
             
             if not embedding1 or not embedding2:
-                return 0.0
+                # embeddings unavailable — fall back to keyword similarity
+                return self._keyword_similarity(text1, text2)
             
-            # Cosine similarity
             dot_product = np.dot(embedding1, embedding2)
             magnitude1 = np.linalg.norm(embedding1)
             magnitude2 = np.linalg.norm(embedding2)
             
             if magnitude1 == 0 or magnitude2 == 0:
-                return 0.0
+                return self._keyword_similarity(text1, text2)
             
             similarity = dot_product / (magnitude1 * magnitude2)
             return float(np.clip(similarity, 0, 1))
         
         except Exception as e:
             self.logger.error("Similarity calculation failed", error=str(e))
-            return 0.0
+            return self._keyword_similarity(text1, text2)
 
     async def _combined_similarity(self, text1: str, text2: str) -> float:
         """Blend semantic and lexical signals with graceful fallback."""

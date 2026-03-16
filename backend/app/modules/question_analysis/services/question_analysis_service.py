@@ -15,6 +15,7 @@ from app.core.database.models import (
 from app.core.logging.system_logger import SystemLogger
 from app.ai_engine.llm.llm_client import LLMClient
 from app.core.config.settings import get_settings
+from app.core.config.constants import BloomTaxonomyLevel, QuestionType
 from app.core.infrastructure.redis_client import get_json
 logger = SystemLogger("question_analysis_service")
 _settings = get_settings()
@@ -33,6 +34,31 @@ class QuestionAnalysisService:
         self.session = session
         self.llm = LLMClient()
 
+    def _resolve_requested_co_ids(self, q_data: Dict[str, Any], cos: List[tuple]) -> List[str]:
+        co_ids = {str(row[0]): str(row[0]) for row in cos}
+        co_codes = {str(row[1]).strip().upper(): str(row[0]) for row in cos}
+
+        raw_refs: List[str] = []
+        for key in ("co_mapped", "co_ids", "co_codes"):
+            value = q_data.get(key)
+            if isinstance(value, (list, tuple, set)):
+                raw_refs.extend(str(item).strip() for item in value if str(item).strip())
+            elif isinstance(value, str) and value.strip():
+                raw_refs.extend(part.strip() for part in value.split(",") if part.strip())
+
+        raw_code = q_data.get("co_code")
+        if isinstance(raw_code, str) and raw_code.strip():
+            raw_refs.extend(part.strip() for part in raw_code.split(",") if part.strip())
+
+        resolved: List[str] = []
+        seen: set[str] = set()
+        for ref in raw_refs:
+            resolved_id = co_ids.get(ref) or co_codes.get(ref.upper())
+            if resolved_id and resolved_id not in seen:
+                seen.add(resolved_id)
+                resolved.append(resolved_id)
+        return resolved
+
     async def add_questions(self, exam_id: str, questions: List[Dict[str, Any]], detect_bloom_with_llm: bool = True) -> List[ExamQuestion]:
         result = await self.session.execute(select(Exam).where(Exam.id == exam_id))
         exam = result.scalar_one_or_none()
@@ -49,13 +75,25 @@ class QuestionAnalysisService:
             if q_data.get("bloom_level"):
                 b = q_data["bloom_level"].strip().lower()
                 bloom_lvl = b if b in _VALID_BLOOM else "understand"
+            bloom_enum = BloomTaxonomyLevel(bloom_lvl if bloom_lvl in _VALID_BLOOM else "understand")
             q_type_raw = (q_data.get("question_type") or "long_answer").lower()
-            q_type = q_type_raw if q_type_raw in {"mcq","short_answer","long_answer","practical","essay"} else "long_answer"
-            eq = ExamQuestion(id=str(uuid.uuid4()), exam_id=exam_id, question_number=q_data.get("question_number", i+1), question_text=q_data.get("question_text",""), marks=float(q_data.get("marks",10)), question_type=q_type, bloom_level=bloom_lvl, bloom_confidence=0.85 if detect_bloom_with_llm else 0.60)
+            q_type = QuestionType(q_type_raw) if q_type_raw in {"mcq", "short_answer", "long_answer", "practical", "essay"} else QuestionType.LONG_ANSWER
+            eq = ExamQuestion(id=str(uuid.uuid4()), exam_id=exam_id, question_number=q_data.get("question_number", i+1), question_text=q_data.get("question_text",""), marks=float(q_data.get("marks",10)), question_type=q_type, bloom_level=bloom_enum, bloom_confidence=0.85 if detect_bloom_with_llm else 0.60)
             self.session.add(eq)
             await self.session.flush()
-            if cos_list and q_data.get("question_text","").strip():
-                mapped = await self._map_question_to_co_llm(q_data.get("question_text",""), bloom_lvl, cos_list)
+            requested_co_ids = self._resolve_requested_co_ids(q_data, cos_list)
+            if requested_co_ids:
+                for co_id in requested_co_ids:
+                    await self.session.execute(
+                        question_co_mapping_table.insert().values(
+                            question_id=eq.id,
+                            course_outcome_id=co_id,
+                            similarity_score=1.0,
+                            confidence_score=1.0,
+                        )
+                    )
+            elif cos_list and q_data.get("question_text","").strip():
+                mapped = await self._map_question_to_co_llm(q_data.get("question_text",""), bloom_enum.value, cos_list)
                 co_id = mapped.get("co_id") if isinstance(mapped, dict) else None
                 conf = float(mapped.get("confidence", 0.80)) if isinstance(mapped, dict) else 0.80
                 if co_id:
@@ -112,15 +150,30 @@ class QuestionAnalysisService:
                 if not q_id or mv is None or str(mv).strip() == "":
                     continue
                 try:
-                    self.session.add(
-                        StudentMarks(
-                            id=str(uuid.uuid4()),
-                            exam_id=exam_id,
-                            student_id=sid,
-                            question_id=q_id,
-                            marks_obtained=Decimal(str(float(mv))),
+                    val = Decimal(str(float(mv)))
+                    # upsert: update if exists, insert if not
+                    existing = await self.session.execute(
+                        select(StudentMarks).where(
+                            and_(
+                                StudentMarks.exam_id == exam_id,
+                                StudentMarks.student_id == sid,
+                                StudentMarks.question_id == q_id,
+                            )
                         )
                     )
+                    sm = existing.scalar_one_or_none()
+                    if sm:
+                        sm.marks_obtained = val
+                    else:
+                        self.session.add(
+                            StudentMarks(
+                                id=str(uuid.uuid4()),
+                                exam_id=exam_id,
+                                student_id=sid,
+                                question_id=q_id,
+                                marks_obtained=val,
+                            )
+                        )
                     rows_saved += 1
                 except Exception as exc:
                     errors.append(f"{sid}/{q_num_str}: {exc}")
@@ -163,7 +216,23 @@ class QuestionAnalysisService:
             sid = str(row.get("student_id","")).strip(); qid = str(row.get("question_id","")).strip()
             raw  = row.get("marks", row.get("marks_obtained",0))
             if not sid or not qid: continue
-            try: self.session.add(StudentMarks(id=str(uuid.uuid4()), exam_id=exam_id, student_id=sid, question_id=qid, marks_obtained=Decimal(str(float(raw or 0))))); processed += 1
+            try:
+                mark_val = Decimal(str(float(raw or 0)))
+                existing = await self.session.execute(
+                    select(StudentMarks).where(
+                        and_(
+                            StudentMarks.exam_id == exam_id,
+                            StudentMarks.student_id == sid,
+                            StudentMarks.question_id == qid,
+                        )
+                    )
+                )
+                sm = existing.scalar_one_or_none()
+                if sm:
+                    sm.marks_obtained = mark_val
+                else:
+                    self.session.add(StudentMarks(id=str(uuid.uuid4()), exam_id=exam_id, student_id=sid, question_id=qid, marks_obtained=mark_val))
+                processed += 1
             except Exception: pass
         await self.session.commit()
         return {"rows_processed": processed}
@@ -211,16 +280,33 @@ class QuestionAnalysisService:
                 q_id = q_map.get(str(q_num))
                 if not q_id or val is None or str(val).strip() == "":
                     continue
-                self.session.add(
-                    StudentMarks(
-                        id=str(uuid.uuid4()),
-                        exam_id=exam_id,
-                        student_id=sid,
-                        question_id=q_id,
-                        marks_obtained=Decimal(str(float(val))),
+                try:
+                    mark_val = Decimal(str(float(val)))
+                    existing = await self.session.execute(
+                        select(StudentMarks).where(
+                            and_(
+                                StudentMarks.exam_id == exam_id,
+                                StudentMarks.student_id == sid,
+                                StudentMarks.question_id == q_id,
+                            )
+                        )
                     )
-                )
-                processed += 1
+                    sm = existing.scalar_one_or_none()
+                    if sm:
+                        sm.marks_obtained = mark_val
+                    else:
+                        self.session.add(
+                            StudentMarks(
+                                id=str(uuid.uuid4()),
+                                exam_id=exam_id,
+                                student_id=sid,
+                                question_id=q_id,
+                                marks_obtained=mark_val,
+                            )
+                        )
+                    processed += 1
+                except Exception:
+                    pass
         await self.session.commit()
         return {"rows_processed": processed}
 
@@ -289,8 +375,10 @@ class QuestionAnalysisService:
                 continue
             seen_students.add(sid)
 
+            # Only enforce enrollment check when the course actually has enrollment records
             if enrolled and sid not in enrolled:
-                errors.append(f"Roll number {sid} not found in enrolled list for this course.")
+                # warn but do not block — faculty may upload before enrollment is seeded
+                logger.warning(f"Student {sid} not in enrollment list for exam {exam_id} — allowing upload")
 
             marks = row.get("marks", {}) or {}
             row_total = 0.0
@@ -345,9 +433,12 @@ class QuestionAnalysisService:
         bloom_levels = await self._batch_bloom_detect_llm(texts)
         bloom_dist: Dict[str, int] = {}
         for q, lvl in zip(questions, bloom_levels):
-            q.bloom_level = lvl; q.bloom_confidence = 0.90
-            bloom_dist[lvl] = bloom_dist.get(lvl,0) + 1
-            self.session.add(QuestionBloomLevel(id=str(uuid.uuid4()), question_id=q.id, bloom_level=lvl, confidence_score=0.90, detection_method="llm_gemini"))
+            lvl_key = str(lvl or "").strip().lower()
+            bloom_enum = BloomTaxonomyLevel(lvl_key if lvl_key in _VALID_BLOOM else "understand")
+            q.bloom_level = bloom_enum
+            q.bloom_confidence = 0.90
+            bloom_dist[bloom_enum.value] = bloom_dist.get(bloom_enum.value, 0) + 1
+            self.session.add(QuestionBloomLevel(id=str(uuid.uuid4()), question_id=q.id, bloom_level=bloom_enum, confidence_score=0.90, detection_method="llm_gemini"))
         await self.session.commit()
         return {"detected": len(questions), "bloom_distribution": bloom_dist, "most_common": max(bloom_dist, key=bloom_dist.get) if bloom_dist else "understand"}
 

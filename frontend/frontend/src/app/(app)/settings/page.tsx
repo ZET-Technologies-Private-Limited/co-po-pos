@@ -1,41 +1,84 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { staggerContainer, fadeSlideUp } from "@/lib/animations";
 import { CheckCircle2, ShieldAlert } from "lucide-react";
 import { useAuthStore } from "@/lib/authStore";
+import apiClient from "@/lib/apiClient";
+import { useUIStore } from "@/lib/uiStore";
 
-const DEPTS = ["Computer Science", "Electronics", "Mechanical", "Civil", "Information Technology"];
-const SEMESTERS_LIST = ["Odd", "Even"];
 const BLOOM_LEVELS_DEFAULT = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"];
 
 export default function SettingsPage() {
   const { activeRole, setActiveRole } = useAuthStore();
+  const { addToast } = useUIStore();
   const [threshold, setThreshold] = useState(60);
   const [deptInput, setDeptInput] = useState("");
-  const [depts, setDepts] = useState(DEPTS);
-  const [semType, setSemType] = useState("Odd");
-  const [bloomLevels, setBloomLevels] = useState(BLOOM_LEVELS_DEFAULT);
-  
+  const [depts, setDepts] = useState<string[]>([]);
+  const [bloomLevels] = useState(BLOOM_LEVELS_DEFAULT);
   const [yearInput, setYearInput] = useState("");
-  const [academicYears, setAcademicYears] = useState(["2025-26", "2024-25"]);
-
+  const [academicYears, setAcademicYears] = useState<string[]>([]);
   const [programInput, setProgramInput] = useState("");
-  const [programs, setPrograms] = useState(["B.Tech Computer Science", "B.Tech Electronics", "M.Tech Data Science"]);
-
+  const [programs, setPrograms] = useState<{ id: string; code: string; name: string }[]>([]);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const saveAll = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
-  
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ayRes, progRes, threshRes] = await Promise.all([
+        apiClient.getAcademicYears().catch(() => ({ items: [] })),
+        apiClient.getPrograms().catch(() => []),
+        apiClient.getThresholds().catch(() => ({ level2: 0.6, level3: 0.7 })),
+      ]);
+      const ayList = Array.isArray(ayRes?.items) ? ayRes.items : Array.isArray(ayRes) ? ayRes : [];
+      setAcademicYears(ayList.map((a: any) => a.code ?? a.ay ?? "").filter(Boolean));
+      setPrograms(Array.isArray(progRes) ? progRes : []);
+      setThreshold(Math.round((threshRes?.level2 ?? 0.6) * 100));
+      // Derive depts from programs
+      const deptSet = new Set<string>();
+      (Array.isArray(progRes) ? progRes : []).forEach((p: any) => { if (p.department) deptSet.add(p.department); });
+      if (deptSet.size === 0) setDepts(["CSE", "ECE", "MECH", "CIVIL", "IT"]);
+      else setDepts([...deptSet]);
+    } catch {
+      setDepts(["CSE", "ECE", "MECH", "CIVIL", "IT"]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const saveAll = async () => {
+    try {
+      await apiClient.setThresholds({ level2: threshold / 100, level3: (threshold + 10) / 100 });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      addToast(e?.message ?? "Failed to save settings", "error");
+    }
+  };
+
   const addDept = () => { if (deptInput.trim()) { setDepts(prev => [...prev, deptInput.trim()]); setDeptInput(""); } };
   const removeDept = (d: string) => setDepts(prev => prev.filter(x => x !== d));
 
-  const addYear = () => { if (yearInput.trim()) { setAcademicYears(prev => [...prev, yearInput.trim()]); setYearInput(""); } };
+  const addYear = async () => {
+    if (!yearInput.trim()) return;
+    try {
+      await apiClient.createAcademicYear({ code: yearInput.trim(), name: yearInput.trim(), start_date: "", end_date: "", is_active: false });
+      setYearInput("");
+      await load();
+    } catch (e: any) {
+      addToast(e?.message ?? "Failed to create AY", "error");
+    }
+  };
   const removeYear = (y: string) => setAcademicYears(prev => prev.filter(x => x !== y));
 
-  const addProgram = () => { if (programInput.trim()) { setPrograms(prev => [...prev, programInput.trim()]); setProgramInput(""); } };
-  const removeProgram = (p: string) => setPrograms(prev => prev.filter(x => x !== p));
+  const addProgram = () => { if (programInput.trim()) { addToast("Programs must be created via the database.", "info"); setProgramInput(""); } };
+  const removeProgram = (p: string) => setPrograms(prev => prev.filter(x => x.id !== p));
+
+  if (loading) return <div className="max-w-3xl mx-auto px-6 pt-12"><p className="text-white/60">Loading settings...</p></div>;
 
   if (activeRole !== "admin") {
     return (
@@ -103,10 +146,10 @@ export default function SettingsPage() {
             ))}
           </div>
           <div className="flex gap-4">
-            <input value={yearInput} onChange={e => setYearInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addYear()}
+            <input value={yearInput} onChange={e => setYearInput(e.target.value)} onKeyDown={e => e.key === "Enter" && void addYear()}
               placeholder="e.g. 2026-27"
               className="flex-1 bg-transparent border-b border-white/20 focus:border-white text-white placeholder-white/30 outline-none py-2 transition-colors" />
-            <button onClick={addYear} className="px-4 py-2 border border-white/20 text-white text-sm font-mono hover:border-white transition-colors">Add</button>
+            <button onClick={() => void addYear()} className="px-4 py-2 border border-white/20 text-white text-sm font-mono hover:border-white transition-colors">Add</button>
           </div>
         </motion.div>
 
@@ -116,11 +159,12 @@ export default function SettingsPage() {
           <p className="text-white/50 font-light mb-8">Configure the degree programs tracked within the system.</p>
           <div className="flex flex-col gap-3 mb-6">
             {programs.map(p => (
-              <div key={p} className="flex items-center justify-between py-3 border-b border-white/5 group">
-                <span className="text-white/70">{p}</span>
-                <button onClick={() => removeProgram(p)} className="text-white/20 hover:text-alert transition-colors opacity-0 group-hover:opacity-100 text-sm font-mono">Remove</button>
+              <div key={p.id} className="flex items-center justify-between py-3 border-b border-white/5 group">
+                <span className="text-white/70">{p.code} — {p.name}</span>
+                <button onClick={() => removeProgram(p.id)} className="text-white/20 hover:text-alert transition-colors opacity-0 group-hover:opacity-100 text-sm font-mono">Remove</button>
               </div>
             ))}
+            {programs.length === 0 && <p className="text-white/30 text-sm">No programs found. Create programs via the database.</p>}
           </div>
           <div className="flex gap-4">
             <input value={programInput} onChange={e => setProgramInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addProgram()}
@@ -150,21 +194,7 @@ export default function SettingsPage() {
           </div>
         </motion.div>
 
-        {/* Institutional Profile */}
-        <motion.div variants={fadeSlideUp} className="pb-12 mb-12 border-b border-white/10">
-          <h2 className="text-2xl font-display text-white mb-2">Institutional Branding</h2>
-          <p className="text-white/50 font-light mb-8">Customize the identity of the OBE workspace.</p>
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest">University Name</label>
-              <input defaultValue="Global Institute of Technology" className="bg-transparent border-b border-white/10 focus:border-brand text-white outline-none py-2 font-display text-lg" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-mono text-white/30 uppercase tracking-widest">Workspace ID</label>
-              <input defaultValue="git-obe-2026" className="bg-transparent border-b border-white/10 text-white/40 outline-none py-2 font-mono text-sm" readOnly />
-            </div>
-          </div>
-        </motion.div>
+
 
         {/* Security & Access */}
         <motion.div variants={fadeSlideUp} className="pb-12 mb-12 border-b border-white/10">
@@ -227,7 +257,7 @@ export default function SettingsPage() {
 
         {/* Save */}
         <motion.div variants={fadeSlideUp}>
-          <button onClick={saveAll} className="flex items-center gap-3 px-8 py-4 bg-white text-black font-medium text-sm hover:bg-white/90 transition-colors">
+          <button onClick={() => void saveAll()} className="flex items-center gap-3 px-8 py-4 bg-white text-black font-medium text-sm hover:bg-white/90 transition-colors">
             {saved ? <><CheckCircle2 className="w-4 h-4 text-attain" /> Saved Successfully</> : "Save All Settings"}
           </button>
         </motion.div>

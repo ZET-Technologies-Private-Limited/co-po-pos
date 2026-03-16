@@ -21,58 +21,75 @@ import numpy as np
 import uuid
 
 logger = SystemLogger("attainment_calculator")
-settings = get_settings()
 
 
 class AttainmentCalculator:
     """
-    Production-grade attainment calculation engine with real academic formulas,
-    database integration, and comprehensive statistics.
-    
-    Formulas:
-    - CO Attainment = Sum(marks for CO questions) / Sum(total marks for CO)
-    - PO Attainment = Average of mapped CO attainments
-    - PSO Attainment = Average of mapped CO attainments
+    Production-grade attainment calculation engine.
+    NOTE: The primary calculation engine is AttainmentService.
+    This class provides supplementary statistics and report utilities.
+
+    NBA-standard level thresholds (read from settings at call time, not import time):
+      Level 3 >= 60%, Level 2 >= 50%, Level 1 < 50%
     """
-    
-    LEVEL_3_THRESHOLD = settings.attainment_level_3_threshold
-    LEVEL_2_THRESHOLD = settings.attainment_level_2_threshold
-    LEVEL_1_THRESHOLD = settings.attainment_level_1_threshold
-    
+
     @staticmethod
-    def determine_attainment_level(percentage: float) -> str:
-        """Determine attainment level from percentage"""
-        if percentage >= AttainmentCalculator.LEVEL_3_THRESHOLD * 100:
+    def _thresholds() -> tuple:
+        s = get_settings()
+        return (
+            getattr(s, "attainment_level_3_threshold", 0.60) * 100.0,
+            getattr(s, "attainment_level_2_threshold", 0.50) * 100.0,
+        )
+
+    @staticmethod
+    async def _thresholds_live() -> tuple:
+        """Redis override wins over settings for runtime-configurable thresholds."""
+        from app.core.infrastructure.redis_client import get_json
+        try:
+            cached = await get_json("obe:thresholds")
+            if cached:
+                l3 = cached.get("level3")
+                l2 = cached.get("level2")
+                if l3 is not None and l2 is not None:
+                    return float(l3) * 100.0, float(l2) * 100.0
+        except Exception:
+            pass
+        return AttainmentCalculator._thresholds()
+
+    @staticmethod
+    def determine_attainment_level(percentage: float, thresholds: tuple | None = None) -> str:
+        """Determine NBA attainment level from percentage."""
+        l3, l2 = thresholds if thresholds else AttainmentCalculator._thresholds()
+        if percentage >= l3:
             return "Level 3"
-        elif percentage >= AttainmentCalculator.LEVEL_2_THRESHOLD * 100:
+        if percentage >= l2:
             return "Level 2"
-        else:
-            return "Level 1"
+        return "Level 1"
     
     @staticmethod
     async def calculate_co_attainment_db(
         session: AsyncSession,
         course_outcome_id: str,
         exam_id: str,
-        course_id: str
+        course_id: str,
+        threshold_pct: float = 0.40,
     ) -> Optional[Dict[str, Any]]:
         """
-        Calculate CO attainment from database with real formula:
-        CO Attainment = Sum(marks for CO questions) / Sum(total marks for CO) * 100
-        CO Attainment = Sum(marks obtained in CO questions) / Sum(total marks for CO)
+        NBA threshold-based CO attainment (matches AttainmentService primary engine).
+        Formula:
+          threshold_marks = threshold_pct × CO_max_marks
+          pass_count = students where CO_obtained >= threshold_marks
+          CO_att% = (pass_count / total_students) × 100
         """
         try:
-            # Verify CO exists
             co_result = await session.execute(
                 select(CourseOutcome).where(CourseOutcome.id == course_outcome_id)
             )
             course_outcome = co_result.scalar_one_or_none()
-            
             if not course_outcome:
                 logger.error(f"CO not found: {course_outcome_id}")
                 return None
-            
-            # Get questions mapped to this CO in this exam
+
             questions_result = await session.execute(
                 select(ExamQuestion.id, ExamQuestion.marks)
                 .join(question_co_mapping_table,
@@ -82,7 +99,6 @@ class AttainmentCalculator:
                     question_co_mapping_table.c.course_outcome_id == course_outcome_id
                 ))
             )
-            
             questions_data = questions_result.all()
             if not questions_data:
                 return {
@@ -92,50 +108,52 @@ class AttainmentCalculator:
                     "total_marks": 0,
                     "marks_obtained": 0.0,
                     "attainment_percentage": 0.0,
-                    "attainment_level": "Level 1"
+                    "attainment_level": "Level 1",
+                    "threshold_pct": int(threshold_pct * 100),
                 }
-            
+
             question_ids = [q[0] for q in questions_data]
-            total_question_marks = sum(q[1] for q in questions_data)
-            
-            # Get student marks for these questions
+            co_max_marks = sum(float(q[1]) for q in questions_data)
+            threshold_marks = threshold_pct * co_max_marks
+
+            # Per-student CO marks
             marks_result = await session.execute(
-                select(
-                    func.count(func.distinct(StudentMarks.student_id)).label("student_count"),
-                    func.sum(StudentMarks.marks_obtained).label("total_obtained")
-                )
+                select(StudentMarks.student_id, StudentMarks.question_id, StudentMarks.marks_obtained)
                 .where(and_(
                     StudentMarks.exam_id == exam_id,
                     StudentMarks.question_id.in_(question_ids)
                 ))
             )
-            
-            row = marks_result.first()
-            total_students = row.student_count or 0
-            total_marks_obtained = float(row.total_obtained or 0)
-            
-            # Calculate attainment percentage
-            if total_question_marks > 0 and total_students > 0:
-                total_possible = total_question_marks * total_students
-                attainment_percentage = (total_marks_obtained / total_possible) * 100
-            else:
-                attainment_percentage = 0.0
-            
-            attainment_level = AttainmentCalculator.determine_attainment_level(attainment_percentage)
-            
-            logger.info(f"CO attainment calculated: {course_outcome_id}, "
-                       f"Percentage: {attainment_percentage:.2f}%, Level: {attainment_level}")
-            
+            marks_rows = marks_result.all()
+
+            student_totals: Dict[str, float] = {}
+            for sid, qid, m in marks_rows:
+                student_totals[sid] = student_totals.get(sid, 0.0) + float(m)
+
+            total_students = len(student_totals)
+            pass_count = sum(1 for v in student_totals.values() if v >= threshold_marks)
+            total_obtained = sum(student_totals.values())
+
+            attainment_percentage = (pass_count / total_students * 100) if total_students > 0 else 0.0
+            thresholds = await AttainmentCalculator._thresholds_live()
+            attainment_level = AttainmentCalculator.determine_attainment_level(attainment_percentage, thresholds)
+
+            logger.info(
+                f"CO attainment (threshold={int(threshold_pct*100)}%): {course_outcome_id}, "
+                f"{pass_count}/{total_students} passed → {attainment_percentage:.2f}%"
+            )
             return {
                 "course_outcome_id": course_outcome_id,
                 "exam_id": exam_id,
                 "total_students": total_students,
-                "total_marks": total_question_marks,
-                "marks_obtained": total_marks_obtained,
+                "students_cleared": pass_count,
+                "total_marks": int(co_max_marks),
+                "threshold_marks": round(threshold_marks, 2),
+                "threshold_pct": int(threshold_pct * 100),
+                "marks_obtained": round(total_obtained, 2),
                 "attainment_percentage": round(attainment_percentage, 2),
-                "attainment_level": attainment_level
+                "attainment_level": attainment_level,
             }
-        
         except SQLAlchemyError as e:
             logger.error(f"Database error in CO attainment: {str(e)}")
             return None
@@ -151,63 +169,59 @@ class AttainmentCalculator:
         program_id: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Calculate PO attainment as average of mapped CO attainments.
-        PO Attainment = Average of mapped CO attainments
+        Calculate PO attainment using NBA weighted formula:
+        PO_att = Σ(CO_att × mapping_level) / Σ(mapping_level)
+        mapping_level: 3(sim>=0.75), 2(sim>=0.50), 1(sim>=0.30)
         """
         try:
-            # Get mapped COs
-            cos_result = await session.execute(
-                select(CourseOutcome.id)
-                .join(co_po_mapping_table,
-                      CourseOutcome.id == co_po_mapping_table.c.course_outcome_id)
+            co_map_result = await session.execute(
+                select(CourseOutcome.id, co_po_mapping_table.c.similarity_score)
+                .join(co_po_mapping_table, CourseOutcome.id == co_po_mapping_table.c.course_outcome_id)
                 .where(and_(
                     CourseOutcome.course_id == course_id,
                     co_po_mapping_table.c.program_outcome_id == program_outcome_id
                 ))
             )
-            
-            co_ids = [row[0] for row in cos_result.all()]
-            
-            if not co_ids:
-                logger.warning(f"No COs mapped to PO {program_outcome_id}")
+            co_rows = co_map_result.all()
+            if not co_rows:
                 return {
                     "program_outcome_id": program_outcome_id,
                     "course_id": course_id,
                     "program_id": program_id,
                     "mapped_co_count": 0,
-                    "avg_co_attainment": 0.0,
                     "attainment_percentage": 0.0,
-                    "attainment_level": "Level 1"
+                    "attainment_level": "Level 1",
                 }
-            
-            # Get CO attainments
+            co_map = {row[0]: float(row[1] or 0) for row in co_rows}
             attainments_result = await session.execute(
-                select(COAttainment.attainment_percentage)
-                .where(COAttainment.course_outcome_id.in_(co_ids))
+                select(COAttainment.course_outcome_id, COAttainment.attainment_percentage)
+                .where(COAttainment.course_outcome_id.in_(list(co_map.keys())))
+                .order_by(COAttainment.calculated_at.desc())
             )
-            
-            attainments = [row[0] for row in attainments_result.all()]
-            
-            if attainments:
-                avg_attainment = sum(attainments) / len(attainments)
-            else:
-                avg_attainment = 0.0
-            
-            attainment_level = AttainmentCalculator.determine_attainment_level(avg_attainment)
-            
-            logger.info(f"PO attainment calculated: {program_outcome_id}, "
-                       f"Percentage: {avg_attainment:.2f}%, Level: {attainment_level}")
-            
+            co_att: Dict[str, float] = {}
+            for row in attainments_result.all():
+                if row[0] not in co_att:
+                    co_att[row[0]] = float(row[1] or 0)
+            num = den = 0.0
+            for co_id, sim in co_map.items():
+                if co_id not in co_att:
+                    continue
+                level = 3 if sim >= 0.75 else (2 if sim >= 0.50 else (1 if sim >= 0.30 else 0))
+                if level == 0:
+                    continue
+                num += level * co_att[co_id]
+                den += level
+            po_pct = (num / den) if den > 0 else 0.0
+            thresholds = await AttainmentCalculator._thresholds_live()
+            attainment_level = AttainmentCalculator.determine_attainment_level(po_pct, thresholds)
             return {
                 "program_outcome_id": program_outcome_id,
                 "course_id": course_id,
                 "program_id": program_id,
-                "mapped_co_count": len(co_ids),
-                "avg_co_attainment": round(avg_attainment, 2),
-                "attainment_percentage": round(avg_attainment, 2),
-                "attainment_level": attainment_level
+                "mapped_co_count": len(co_att),
+                "attainment_percentage": round(po_pct, 2),
+                "attainment_level": attainment_level,
             }
-        
         except SQLAlchemyError as e:
             logger.error(f"Database error in PO attainment: {str(e)}")
             return None
@@ -222,50 +236,58 @@ class AttainmentCalculator:
         course_id: str,
         program_id: str
     ) -> Optional[Dict[str, Any]]:
-        """Calculate PSO attainment using same logic as PO"""
+        """Calculate PSO attainment using same NBA weighted formula as PO.
+        PSO_att = Σ(CO_att × mapping_level) / Σ(mapping_level)
+        """
         try:
-            # Get mapped COs
-            cos_result = await session.execute(
-                select(CourseOutcome.id)
-                .join(co_pso_mapping_table,
-                      CourseOutcome.id == co_pso_mapping_table.c.course_outcome_id)
+            co_map_result = await session.execute(
+                select(CourseOutcome.id, co_pso_mapping_table.c.similarity_score)
+                .join(co_pso_mapping_table, CourseOutcome.id == co_pso_mapping_table.c.course_outcome_id)
                 .where(and_(
                     CourseOutcome.course_id == course_id,
                     co_pso_mapping_table.c.program_specific_outcome_id == pso_id
                 ))
             )
-            
-            co_ids = [row[0] for row in cos_result.all()]
-            
-            if not co_ids:
+            co_rows = co_map_result.all()
+            if not co_rows:
                 return {
                     "pso_id": pso_id,
                     "course_id": course_id,
                     "program_id": program_id,
                     "mapped_co_count": 0,
                     "attainment_percentage": 0.0,
-                    "attainment_level": "Level 1"
+                    "attainment_level": "Level 1",
                 }
-            
-            # Get CO attainments
+            co_map = {row[0]: float(row[1] or 0) for row in co_rows}
             attainments_result = await session.execute(
-                select(COAttainment.attainment_percentage)
-                .where(COAttainment.course_outcome_id.in_(co_ids))
+                select(COAttainment.course_outcome_id, COAttainment.attainment_percentage)
+                .where(COAttainment.course_outcome_id.in_(list(co_map.keys())))
+                .order_by(COAttainment.calculated_at.desc())
             )
-            
-            attainments = [row[0] for row in attainments_result.all()]
-            avg_attainment = sum(attainments) / len(attainments) if attainments else 0.0
-            attainment_level = AttainmentCalculator.determine_attainment_level(avg_attainment)
-            
+            co_att: Dict[str, float] = {}
+            for row in attainments_result.all():
+                if row[0] not in co_att:
+                    co_att[row[0]] = float(row[1] or 0)
+            num = den = 0.0
+            for co_id, sim in co_map.items():
+                if co_id not in co_att:
+                    continue
+                level = 3 if sim >= 0.75 else (2 if sim >= 0.50 else (1 if sim >= 0.30 else 0))
+                if level == 0:
+                    continue
+                num += level * co_att[co_id]
+                den += level
+            pso_pct = (num / den) if den > 0 else 0.0
+            thresholds = await AttainmentCalculator._thresholds_live()
+            attainment_level = AttainmentCalculator.determine_attainment_level(pso_pct, thresholds)
             return {
                 "pso_id": pso_id,
                 "course_id": course_id,
                 "program_id": program_id,
-                "mapped_co_count": len(co_ids),
-                "attainment_percentage": round(avg_attainment, 2),
-                "attainment_level": attainment_level
+                "mapped_co_count": len(co_att),
+                "attainment_percentage": round(pso_pct, 2),
+                "attainment_level": attainment_level,
             }
-        
         except Exception as e:
             logger.error(f"Error calculating PSO attainment: {str(e)}")
             return None

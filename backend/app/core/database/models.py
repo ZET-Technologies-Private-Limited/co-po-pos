@@ -4,14 +4,32 @@ SQLAlchemy ORM models for all database entities
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime,
-    ForeignKey, Text, Enum, DECIMAL, Index, UniqueConstraint,
-    JSON, Table
+    ForeignKey, Text, DECIMAL, Index, UniqueConstraint,
+    JSON, Table, TypeDecorator, Enum
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from app.core.config.constants import (
     UserRole, BloomTaxonomyLevel, OutcomeType, ExamType, QuestionType
 )
+
+
+# TypeDecorator to handle ENUM/String conversion for PostgreSQL compatibility
+class EnumString(TypeDecorator):
+    """A type that can store both ENUM and String values"""
+    impl = String
+    cache_ok = True
+    
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        # Convert enum to string value
+        if hasattr(value, 'value'):
+            return value.value
+        return str(value)
+    
+    def process_result_value(self, value, dialect):
+        return value
 
 Base = declarative_base()
 
@@ -51,7 +69,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     full_name = Column(String(255))
     hashed_password = Column(String(255), nullable=False)
-    role = Column(Enum(UserRole), default=UserRole.VIEWER, nullable=False)
+    role = Column(Enum(UserRole, native_enum=True), default=UserRole.VIEWER, nullable=False)
     department = Column(String(255))
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False)
@@ -71,6 +89,13 @@ class Course(Base):
     description = Column(Text)
     credits = Column(Integer, default=3)
     semester = Column(Integer)
+    course_type = Column(String(20), default="core")
+    enrolled_students = Column(Integer, default=0)
+    fa_method = Column(String(50), default="best_n_of_m")
+    fa_best_n = Column(Integer, default=3)
+    fa_total_components = Column(Integer, default=5)
+    fa_weight = Column(Float, default=0.40)
+    sa_weight = Column(Float, default=0.60)
     department = Column(String(255))
     syllabus = Column(Text)
     syllabus_embedding_id = Column(String(255))  # Pinecone vector ID
@@ -90,7 +115,7 @@ class CourseOutcome(Base):
     course_id = Column(String(36), ForeignKey('courses.id'), nullable=False)
     code = Column(String(50), nullable=False)
     statement = Column(Text, nullable=False)
-    bloom_level = Column(Enum(BloomTaxonomyLevel), nullable=False)
+    bloom_level = Column(Enum(BloomTaxonomyLevel, native_enum=True), nullable=False)
     description = Column(Text)
     embedding_id = Column(String(255))  # Pinecone vector ID
     is_active = Column(Boolean, default=True)
@@ -169,7 +194,7 @@ class Exam(Base):
     id = Column(String(36), primary_key=True)
     course_id = Column(String(36), ForeignKey('courses.id'), nullable=False)
     exam_name = Column(String(255), nullable=False)
-    exam_type = Column(Enum(ExamType), nullable=False)
+    exam_type = Column(Enum(ExamType, native_enum=True), nullable=False)
     total_marks = Column(Integer, nullable=False)
     duration_minutes = Column(Integer)
     exam_date = Column(DateTime)
@@ -192,8 +217,8 @@ class ExamQuestion(Base):
     question_number = Column(Integer)
     question_text = Column(Text, nullable=False)
     marks = Column(Integer, nullable=False)
-    question_type = Column(Enum(QuestionType), nullable=False)
-    bloom_level = Column(Enum(BloomTaxonomyLevel))
+    question_type = Column(Enum(QuestionType, native_enum=True), nullable=False)
+    bloom_level = Column(Enum(BloomTaxonomyLevel, native_enum=True))
     bloom_confidence = Column(Float, default=0.0)
     embedding_id = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -399,7 +424,7 @@ class QuestionBloomLevel(Base):
     
     id = Column(String(36), primary_key=True)
     question_id = Column(String(36), ForeignKey('exam_questions.id'), nullable=False)
-    bloom_level = Column(Enum(BloomTaxonomyLevel), nullable=False)
+    bloom_level = Column(Enum(BloomTaxonomyLevel, native_enum=True), nullable=False)
     confidence_score = Column(Float, default=0.0)
     detection_method = Column(String(100))
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

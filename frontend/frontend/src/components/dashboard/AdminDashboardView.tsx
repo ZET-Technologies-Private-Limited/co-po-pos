@@ -29,6 +29,8 @@ function timeAgo(ts: string): string {
 export function AdminDashboardView() {
   const { user } = useAuthStore();
   const [courses, setCourses] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [ayItems, setAyItems] = useState<any[]>([]);
   const [currentAY, setCurrentAY] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -40,14 +42,18 @@ export function AdminDashboardView() {
     setLoading(true);
     setError(null);
     try {
-      const [coursesRes, ayRes, currentRes] = await Promise.all([
+      const [coursesRes, ayRes, currentRes, usersRes, auditRes] = await Promise.all([
         apiClient.getCourses(),
         apiClient.getAcademicYears().catch(() => ({ items: [] })),
         apiClient.getCurrentAcademicYear().catch(() => ({ code: "2024-25" })),
+        apiClient.getUsers().catch(() => []),
+        apiClient.getAuditLog(200).catch(() => []),
       ]);
       setCourses(Array.isArray(coursesRes) ? coursesRes : (coursesRes?.items ?? []));
       setAyItems(ayRes?.items ?? []);
       setCurrentAY(currentRes);
+      setUsers(Array.isArray(usersRes) ? usersRes : []);
+      setAuditEvents(Array.isArray(auditRes) ? auditRes : []);
     } catch (e: any) {
       setError(e?.message || "Failed to load admin dashboard.");
     } finally {
@@ -68,15 +74,31 @@ export function AdminDashboardView() {
   }, [load]);
 
   const userStats = useMemo(() => {
+    const now = Date.now();
+    const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    // backend returns hod/course_lead/viewer — map to frontend labels
+    const backendToFrontend: Record<string, string> = {
+      admin: "admin", hod: "department_head", course_lead: "subject_lead",
+      faculty: "faculty", viewer: "student",
+    };
     const roles = ["admin", "department_head", "subject_lead", "faculty", "student"] as const;
-    return roles.map(role => ({
-      role: ROLE_LABELS[role],
-      total: 0,
-      active: 0,
-      inactive: 0,
-      newThisWeek: 0,
-    }));
-  }, []);
+    return roles.map(role => {
+      const matching = users.filter((u: any) => {
+        const r = backendToFrontend[u.role] ?? u.role;
+        return r === role;
+      });
+      return {
+        role: ROLE_LABELS[role],
+        total: matching.length,
+        active: matching.filter((u: any) => u.is_active).length,
+        inactive: matching.filter((u: any) => !u.is_active).length,
+        newThisWeek: matching.filter((u: any) => {
+          const created = u.created_at ? new Date(u.created_at).getTime() : 0;
+          return created >= oneWeekAgo;
+        }).length,
+      };
+    });
+  }, [users]);
 
   const deptRows = useMemo(() => {
     const depts = [...new Set(courses.map((c: any) => c.department ?? c.dept ?? "—").filter(Boolean))];
@@ -99,11 +121,25 @@ export function AdminDashboardView() {
     return items;
   }, [courses.length]);
 
-  const allEvents = useMemo(() => [], []);
+  const allEvents = useMemo(() => auditEvents.map((e: any) => ({
+    id: e.id,
+    timestamp: e.timestamp ? new Date(e.timestamp).toLocaleString() : "—",
+    userId: e.userId || e.user_id || "—",
+    action: e.action || "—",
+    result: e.result ?? (e.type === "error" ? "failure" : "success"),
+  })), [auditEvents]);
   const totalPages = Math.max(1, Math.ceil(allEvents.length / PAGE_SIZE));
   const pageEvents = allEvents.slice(auditPage * PAGE_SIZE, (auditPage + 1) * PAGE_SIZE);
-  const errorEntries = useMemo(() => [], []);
-  const errorGroups = useMemo(() => [], []);
+  const errorEntries = useMemo(() => allEvents.filter((e: any) => e.result === "failure"), [allEvents]);
+  const errorGroups = useMemo(() => {
+    const groups: Record<string, { type: string; count: number; first: string }> = {};
+    errorEntries.forEach((e: any) => {
+      const key = e.action || "Unknown";
+      if (!groups[key]) groups[key] = { type: key, count: 0, first: e.timestamp };
+      groups[key].count++;
+    });
+    return Object.values(groups);
+  }, [errorEntries]);
 
   const ayRows = useMemo(() => {
     const code = currentAY?.code ?? "2024-25";

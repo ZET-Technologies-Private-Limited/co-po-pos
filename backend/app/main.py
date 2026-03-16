@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.middleware import Middleware
 from app.core.config.settings import get_settings
 from app.core.logging.system_logger import SystemLogger, setup_logging
 from app.core.database.connection_manager import db_manager
@@ -64,7 +65,7 @@ app.add_middleware(
 # Exception handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler"""
+    """Global exception handler that preserves CORS headers"""
     logger.error(
         "Unhandled exception",
         path=request.url.path,
@@ -74,7 +75,16 @@ async def global_exception_handler(request: Request, exc: Exception):
     response_body: dict = {"detail": "Internal server error"}
     if settings.debug:
         response_body["error"] = str(exc)
-    return JSONResponse(status_code=500, content=response_body)
+    
+    origin = request.headers.get("origin", "*")
+    return JSONResponse(
+        status_code=500,
+        content=response_body,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
 
 
 # Health check endpoint

@@ -169,7 +169,7 @@ export function LeadDashboardView() {
             <h2 className="text-sm font-mono text-white/40 uppercase tracking-widest flex items-center gap-2">
               <Layers className="w-4 h-4 text-brand" /> CO Health by Course
             </h2>
-            <div className="overflow-x-auto border border-white/10 rounded-xl">
+            <div className="overflow-x-auto border border-white/10">
               <table className="w-full border-collapse text-xs">
                 <thead className="bg-white/[0.02]">
                   <tr>
@@ -259,7 +259,7 @@ export function LeadDashboardView() {
             <h2 className="text-sm font-mono text-white/40 uppercase tracking-widest flex items-center gap-2">
               <Layers className="w-4 h-4 text-brand" /> PO Summary
             </h2>
-            <div className="overflow-x-auto border border-white/10 rounded-xl">
+            <div className="overflow-x-auto border border-white/10">
               <table className="w-full border-collapse text-xs">
                 <thead className="bg-white/[0.02]">
                   <tr>
@@ -330,7 +330,7 @@ export function LeadDashboardView() {
             </h2>
             <div className="space-y-3">
               {approvalQueue.length === 0 ? (
-                <div className="py-12 text-center border border-dashed border-white/15 rounded-xl text-xs text-white/30 italic">
+                <div className="py-12 text-center border border-dashed border-white/15 text-xs text-white/30 italic">
                   <CheckCircle2 className="w-5 h-5 mx-auto mb-2 text-attain/60" />
                   No pending approvals.
                 </div>
@@ -345,7 +345,7 @@ export function LeadDashboardView() {
                   return (
                     <div
                       key={`${item.courseId}-${item.examId}`}
-                      className="p-4 border border-white/10 rounded-xl bg-white/[0.01] hover:bg-white/[0.03] transition-colors flex flex-col gap-2"
+                      className="p-4 border border-white/10 bg-white/[0.01] hover:bg-white/[0.03] transition-colors flex flex-col gap-2"
                     >
                       <div className="flex items-center justify-between">
                         <div>

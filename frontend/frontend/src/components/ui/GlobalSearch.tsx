@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ArrowRight, X, BookOpen, BarChart3, FileText, Bot, Users, Settings } from "lucide-react";
+import { Search, ArrowRight, X, BookOpen, BarChart3, FileText, Bot, Users, Settings, Plus } from "lucide-react";
 import { useUIStore } from "@/lib/uiStore";
 import { useRouter } from "next/navigation";
 
 const SEARCH_ITEMS = [
   { label: "Dashboard", icon: BarChart3, href: "/dashboard", desc: "System overview and attainment summary" },
+  { label: "New Course", icon: Plus, href: "/faculty/course/new", desc: "Create a new course profile" },
   { label: "Courses", icon: BookOpen, href: "/courses", desc: "Browse and manage all courses" },
   { label: "Analytics", icon: BarChart3, href: "/analytics", desc: "Charts, trends, and department analytics" },
   { label: "Reports", icon: FileText, href: "/reports", desc: "Generate and export CO/PO reports" },

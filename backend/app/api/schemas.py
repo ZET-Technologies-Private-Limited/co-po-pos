@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -12,6 +12,10 @@ class UserLogin(BaseModel):
     remember_me: bool = False
 
 
+# Alias for backwards compatibility
+UserLoginRequest = UserLogin
+
+
 class UserRegister(BaseModel):
     username: str
     email: EmailStr
@@ -19,6 +23,10 @@ class UserRegister(BaseModel):
     full_name: str
     role: Optional[str] = "faculty"
     department: Optional[str] = None
+
+
+# Alias for backwards compatibility
+UserRegisterRequest = UserRegister
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -59,22 +67,55 @@ class TokenResponse(BaseModel):
     role: str
 
 
+class UserResponse(BaseModel):
+    """User response schema (non-sensitive fields only)"""
+    id: str
+    username: str
+    email: str
+    full_name: str  
+    role: str
+    department: Optional[str] = None
+    is_active: bool = True
+    is_verified: bool = False
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
 class CourseCreate(BaseModel):
     course_code: str
     course_name: str
     credits: int
     semester: int
     description: Optional[str] = None
+    department: Optional[str] = None
+    course_type: Optional[str] = "core"
+    enrolled_students: Optional[int] = 0
+    fa_method: Optional[str] = "best_n_of_m"
+    fa_best_n: Optional[int] = 3
+    fa_total_components: Optional[int] = 5
+    fa_weight: Optional[float] = 0.40
+    sa_weight: Optional[float] = 0.60
 
 
 class CourseResponse(BaseModel):
     id: str
     course_code: str
     course_name: str
-    credits: int
-    semester: int
-    description: Optional[str]
-    created_by: str
+    credits: Optional[int] = None
+    semester: Optional[int] = None
+    description: Optional[str] = None
+    department: Optional[str] = None
+    course_type: Optional[str] = None
+    enrolled_students: Optional[int] = None
+    fa_method: Optional[str] = None
+    fa_best_n: Optional[int] = None
+    fa_total_components: Optional[int] = None
+    fa_weight: Optional[float] = None
+    sa_weight: Optional[float] = None
+    syllabus: Optional[str] = None
+    created_by: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -162,9 +203,9 @@ class ProgramOutcomeInput(BaseModel):
 
 class COGenerateRequest(BaseModel):
     """Request to generate COs from syllabus with PO/PSO alignment"""
-    syllabus: str
-    program_outcomes: List[ProgramOutcomeInput] = []
-    program_specific_outcomes: List[ProgramOutcomeInput] = []
+    syllabus: Optional[str] = None
+    program_outcomes: List[ProgramOutcomeInput] = Field(default_factory=list)
+    program_specific_outcomes: List[ProgramOutcomeInput] = Field(default_factory=list)
     num_cos: int = 5
 
 
@@ -191,6 +232,9 @@ class QuestionCreate(BaseModel):
     part_label: Optional[str] = None
     either_or_pair: Optional[str] = None
     co_mapped: Optional[List[str]] = None
+    co_ids: Optional[List[str]] = None
+    co_code: Optional[str] = None
+    co_codes: Optional[List[str]] = None
     override_reason: Optional[str] = None
 
 
@@ -212,9 +256,11 @@ class BulkMarksRequest(BaseModel):
 
 class ChatMessage(BaseModel):
     """Chatbot conversation message"""
-    message: str
+    message: Optional[str] = None
+    text: Optional[str] = None
     course_id: Optional[str] = None
     session_id: Optional[str] = None
+    message_number: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
@@ -281,6 +327,9 @@ class COMappingsUpdate(BaseModel):
     """Update PO and PSO code mappings for a CO (inline multi-select in CO table)"""
     po_codes: List[str] = []
     pso_codes: List[str] = []
+    # correlation weights: {"PO1": 3, "PO2": 2, ...}  — 1/2/3 scale
+    po_levels: Dict[str, int] = {}
+    pso_levels: Dict[str, int] = {}
     program_id: Optional[str] = None
 
 

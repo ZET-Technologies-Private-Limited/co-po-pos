@@ -45,22 +45,16 @@ export default function FacultyCourseReportsPage() {
     }
   }, [courseId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     const onFocus = () => void load();
-    if (typeof document !== "undefined" && document.addEventListener) {
-      document.addEventListener("visibilitychange", onFocus);
-      return () => document.removeEventListener("visibilitychange", onFocus);
-    }
+    document.addEventListener("visibilitychange", onFocus);
+    return () => document.removeEventListener("visibilitychange", onFocus);
   }, [load]);
 
   async function generateReport() {
-    setWorking(true);
-    setError(null);
-    setMessage(null);
+    setWorking(true); setError(null); setMessage(null);
     try {
       const result = await apiClient.generateReport(courseId, reportType);
       setMessage(`Report generated successfully (${result?.report_id || "id unavailable"}).`);
@@ -72,9 +66,7 @@ export default function FacultyCourseReportsPage() {
   }
 
   async function exportReport(format: DownloadFormat) {
-    setWorking(true);
-    setError(null);
-    setMessage(null);
+    setWorking(true); setError(null); setMessage(null);
     try {
       const blob = await apiClient.downloadReport(courseId, format);
       const suffix = format === "excel" || format === "nba" ? "xlsx" : "pdf";
@@ -95,31 +87,37 @@ export default function FacultyCourseReportsPage() {
     return { co, po, pso, grades };
   }, [visualization]);
 
+  const coRows: any[] = useMemo(() => Array.isArray(visualization?.co_attainment) ? visualization.co_attainment : [], [visualization]);
+  const gradeRows: any[] = useMemo(() => Array.isArray(visualization?.grade_distribution) ? visualization.grade_distribution : [], [visualization]);
+
+  const th = "px-3 py-2 text-left text-[10px] font-mono text-white/40 uppercase tracking-widest";
+
   return (
     <AccessGate feature="export_pdf" deny="lock">
       <div className="max-w-6xl mx-auto pb-24 space-y-6">
         <div className="border-b border-white/10 pb-4">
           <h1 className="text-3xl text-white font-display">Reports and Visualization</h1>
-          <p className="text-white/50 mt-1">
-            {course?.course_code || "Course"} - {course?.course_name || "Loading..."}
+          <p className="text-white/50 mt-1 text-sm">
+            {course?.course_code || "Course"} — {course?.course_name || "Loading..."}
           </p>
         </div>
 
-        {loading ? <p className="text-white/60">Loading report inputs...</p> : null}
-        {error ? <p className="text-alert">{error}</p> : null}
-        {message ? <p className="text-attain">{message}</p> : null}
+        {loading && <p className="text-white/60">Loading report inputs...</p>}
+        {error && <p className="text-alert text-sm">{error}</p>}
+        {message && <p className="text-attain text-sm">{message}</p>}
 
-        {!loading ? (
+        {!loading && (
           <>
-            <section className="border border-white/10 rounded-lg p-4 space-y-3">
-              <h2 className="text-sm text-white">Report Actions</h2>
+            {/* Actions */}
+            <section className="border border-white/10 p-4 space-y-3">
+              <h2 className="text-sm font-mono text-white uppercase tracking-widest">Report Actions</h2>
               <div className="flex flex-wrap gap-3 items-end">
                 <label className="text-xs text-white/60">
                   Report Type
                   <select
                     value={reportType}
-                    onChange={(e) => setReportType(e.target.value as ReportType)}
-                    className="ml-2 bg-transparent border border-white/20 rounded px-2 py-1 text-white"
+                    onChange={e => setReportType(e.target.value as ReportType)}
+                    className="ml-2 bg-transparent border border-white/20 px-2 py-1 text-white text-xs"
                   >
                     <option value="co_attainment">CO Attainment</option>
                     <option value="po_attainment">PO Attainment</option>
@@ -127,69 +125,96 @@ export default function FacultyCourseReportsPage() {
                     <option value="full">Full OBE Report</option>
                   </select>
                 </label>
-
-                <button
-                  type="button"
-                  onClick={() => void generateReport()}
-                  disabled={working}
-                  className="px-3 py-1 text-xs bg-brand text-white rounded disabled:opacity-60"
-                >
-                  Generate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void exportReport("pdf")}
-                  disabled={working}
-                  className="px-3 py-1 text-xs bg-white/10 text-white rounded disabled:opacity-60"
-                >
-                  Export PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void exportReport("excel")}
-                  disabled={working}
-                  className="px-3 py-1 text-xs bg-white/10 text-white rounded disabled:opacity-60"
-                >
-                  Export Excel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void exportReport("nba")}
-                  disabled={working}
-                  className="px-3 py-1 text-xs bg-white/10 text-white rounded disabled:opacity-60"
-                >
-                  Export NBA
-                </button>
+                <button onClick={() => void generateReport()} disabled={working} className="px-3 py-1 text-xs bg-brand text-white disabled:opacity-60">Generate</button>
+                <button onClick={() => void exportReport("pdf")} disabled={working} className="px-3 py-1 text-xs bg-white/10 text-white disabled:opacity-60">Export PDF</button>
+                <button onClick={() => void exportReport("excel")} disabled={working} className="px-3 py-1 text-xs bg-white/10 text-white disabled:opacity-60">Export Excel</button>
+                <button onClick={() => void exportReport("nba")} disabled={working} className="px-3 py-1 text-xs bg-white/10 text-white disabled:opacity-60">Export NBA</button>
               </div>
             </section>
 
+            {/* Summary stats */}
             <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="border border-white/10 rounded-lg p-3">
-                <p className="text-[10px] text-white/50 uppercase">CO Series</p>
-                <p className="text-xl text-white mt-1">{summaryStats.co}</p>
-              </div>
-              <div className="border border-white/10 rounded-lg p-3">
-                <p className="text-[10px] text-white/50 uppercase">PO Series</p>
-                <p className="text-xl text-white mt-1">{summaryStats.po}</p>
-              </div>
-              <div className="border border-white/10 rounded-lg p-3">
-                <p className="text-[10px] text-white/50 uppercase">PSO Series</p>
-                <p className="text-xl text-white mt-1">{summaryStats.pso}</p>
-              </div>
-              <div className="border border-white/10 rounded-lg p-3">
-                <p className="text-[10px] text-white/50 uppercase">Grade Buckets</p>
-                <p className="text-xl text-white mt-1">{summaryStats.grades}</p>
-              </div>
+              {[
+                { label: "CO Series", val: summaryStats.co },
+                { label: "PO Series", val: summaryStats.po },
+                { label: "PSO Series", val: summaryStats.pso },
+                { label: "Grade Buckets", val: summaryStats.grades },
+              ].map(({ label, val }) => (
+                <div key={label} className="border border-white/10 p-3">
+                  <p className="text-[10px] font-mono text-white/40 uppercase">{label}</p>
+                  <p className="text-xl text-white mt-1">{val}</p>
+                </div>
+              ))}
             </section>
 
-            <section className="border border-white/10 rounded-lg p-4">
-              <h2 className="text-sm text-white mb-2">Visualization Payload</h2>
-              <pre className="text-xs text-white/70 whitespace-pre-wrap max-h-[480px] overflow-y-auto">
-                {JSON.stringify(visualization, null, 2)}
-              </pre>
-            </section>
+            {/* CO Attainment table */}
+            {coRows.length > 0 && (
+              <section className="border border-white/10">
+                <div className="px-4 py-3 border-b border-white/10">
+                  <h2 className="text-sm font-mono text-white uppercase tracking-widest">CO Attainment</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className={th}>CO</th>
+                        <th className={th}>Attainment %</th>
+                        <th className={th}>Level</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {coRows.map((item: any, i: number) => {
+                        const pct = Number(item.attainment_percentage ?? item.percentage ?? 0);
+                        const level = pct >= 60 ? "L3" : pct >= 40 ? "L2" : "L1";
+                        const color = pct >= 60 ? "text-attain" : pct >= 40 ? "text-brand" : "text-alert";
+                        return (
+                          <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
+                            <td className="px-3 py-2 text-xs text-white/70 font-mono">{item.co_code ?? item.co ?? `CO${i + 1}`}</td>
+                            <td className="px-3 py-2 text-xs text-white">{pct}%</td>
+                            <td className={`px-3 py-2 text-xs font-mono font-bold ${color}`}>{level}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {/* Grade distribution table */}
+            {gradeRows.length > 0 && (
+              <section className="border border-white/10">
+                <div className="px-4 py-3 border-b border-white/10">
+                  <h2 className="text-sm font-mono text-white uppercase tracking-widest">Grade Distribution</h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className={th}>Grade</th>
+                        <th className={th}>Count</th>
+                        <th className={th}>Percentage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gradeRows.map((item: any, i: number) => (
+                        <tr key={i} className="border-b border-white/5 hover:bg-white/[0.02]">
+                          <td className="px-3 py-2 text-xs text-white/70">{item.grade ?? item.label ?? `Grade ${i + 1}`}</td>
+                          <td className="px-3 py-2 text-xs text-white/70">{item.count ?? item.value ?? 0}</td>
+                          <td className="px-3 py-2 text-xs text-white/70">{item.percentage ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {coRows.length === 0 && gradeRows.length === 0 && (
+              <p className="text-white/40 text-sm">No visualization data available. Generate CO attainment first.</p>
+            )}
           </>
-        ) : null}
+        )}
       </div>
     </AccessGate>
   );

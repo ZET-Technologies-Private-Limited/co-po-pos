@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 from langgraph.graph import StateGraph, END
 
 from app.core.logging.system_logger import SystemLogger
+from app.core.prompts.nba_obe_system_prompt import get_system_prompt
 
 logger = SystemLogger("langgraph_workflow")
 
@@ -189,6 +190,12 @@ def intent_router(state: OBEGraphState) -> str:
         "setup_exam":               "configure_exam_node",
         "provide_exam_type":        "configure_exam_node",
         "provide_max_marks":        "configure_exam_node",
+        "obe_wizard":               "obe_wizard_node",
+        "start_obe_wizard":         "obe_wizard_node",
+        "confirm_cos":              "obe_wizard_node",
+        "provide_exam_config":      "obe_wizard_node",
+        "provide_question_mapping": "obe_wizard_node",
+        "provide_marks":            "obe_wizard_node",
         "map_co_po":                "map_co_po_node",
         "map_co_pso":               "map_co_pso_node",
         "map_question_co":          "map_question_co_node",
@@ -233,14 +240,85 @@ async def generate_co_node(state: OBEGraphState) -> dict:  # noqa: C901
     intent    = state.get("intent", "")
     msg_lower = message.lower().strip()
 
+    # If course_id is missing, try to parse course details from free text and
+    # create/resolve a Course record so the faculty can start from a natural
+    # language description (Part 2 Step 1 behaviour).
     if not course_id:
-        return {
-            "reply": (
-                "Please provide a `course_id` to work with Course Outcomes.\n\n"
-                "Use the CO Generation page for your course to start the wizard."
-            ),
-            "data": None,
-        }
+        try:
+            from sqlalchemy import select as _select
+            from app.core.database.models import Course as _Course
+
+            # Try to extract course code like CSE301 or "course code: CSE301"
+            m_code = _re.search(r"(course\s*code\s*[:=\-]\s*([A-Za-z0-9\-]+))|([A-Z]{2,}\d{3,})", message)
+            course_code = ""
+            if m_code:
+                course_code = (m_code.group(2) or m_code.group(3) or "").strip()
+
+            # Try to extract course name like "Course Name: Data Structures and Algorithms"
+            m_name = _re.search(r"course\s*name\s*[:=\-]\s*(.+)", message, flags=_re.IGNORECASE)
+            course_name = (m_name.group(1).strip() if m_name else "")
+
+            # Department (optional)
+            m_dept = _re.search(r"department\s*[:=\-]\s*(.+)", message, flags=_re.IGNORECASE)
+            department = (m_dept.group(1).strip() if m_dept else None)
+
+            # Semester / credits / total students (optional)
+            m_sem = _re.search(r"semester\s*[:=\-]\s*(\d+)", message, flags=_re.IGNORECASE)
+            m_cred = _re.search(r"credits?\s*[:=\-]\s*(\d+)", message, flags=_re.IGNORECASE)
+            m_students = _re.search(r"(total\s+students|students)\s*[:=\-]\s*(\d+)", message, flags=_re.IGNORECASE)
+            semester = int(m_sem.group(1)) if m_sem else None
+            credits = int(m_cred.group(1)) if m_cred else 3
+            enrolled = int(m_students.group(2)) if m_students else 0
+
+            if course_code and course_name:
+                # Try to find existing course by code first
+                existing = await session.execute(
+                    _select(_Course).where(_Course.course_code == course_code)
+                )
+                row = existing.scalar_one_or_none()
+                if row:
+                    course_id = row.id
+                else:
+                    import uuid as _uuid
+                    new_course = _Course(
+                        id=str(_uuid.uuid4()),
+                        course_code=course_code,
+                        course_name=course_name,
+                        department=department,
+                        semester=semester,
+                        credits=credits,
+                        enrolled_students=enrolled,
+                    )
+                    session.add(new_course)
+                    await session.commit()
+                    course_id = new_course.id
+
+                # Update state so downstream logic uses the resolved course_id
+                state["course_id"] = course_id
+            else:
+                return {
+                    "reply": (
+                        "To start CO generation without a `course_id`, please include at least "
+                        "`Course Name:` and `Course Code:` in your message.\n\n"
+                        "Example:\n"
+                        "Course Name: Data Structures and Algorithms\n"
+                        "Course Code: CSE301\n"
+                        "Department: Computer Science and Engineering\n"
+                        "Semester: 3\n"
+                        "Credits: 4\n"
+                        "Total Students: 60"
+                    ),
+                    "data": None,
+                }
+        except Exception as exc:
+            logger.error(f"generate_co_node auto-course creation failed: {exc}")
+            return {
+                "reply": (
+                    "I could not infer the course from your message. "
+                    "Please select a course from the UI or provide a `course_id`."
+                ),
+                "data": None,
+            }
 
     step_key = f"chatbot_state:{user_id}:{course_id}" if user_id else f"chatbot_state:anon:{course_id}"
 
@@ -468,6 +546,10 @@ async def generate_co_node(state: OBEGraphState) -> dict:  # noqa: C901
                 "create":    "L6 — students design new work. Verbs: design, develop, construct.",
             }
 
+            def _resolve_co_by_code(cos_list: list, code: str):
+                target_code = (code or "").strip().upper()
+                return next((c for c in cos_list if str(c.code).strip().upper() == target_code), None)
+
             # BT explanation request
             if intent == "explain_co_bt" or _re.search(r"why.*(co\d+|level|bloom|bt)", msg_lower):
                 m = _re.search(r"co(\d+)", msg_lower)
@@ -487,13 +569,37 @@ async def generate_co_node(state: OBEGraphState) -> dict:  # noqa: C901
                     }
                 return {"reply": f"CO not found. Check the CO code.", "data": None}
 
+            # ROLLBACK COx [index]
+            m_rb = _re.search(r"\brollback\s+co(\d+)(?:\s+(\d+))?\b", msg_lower)
+            if m_rb:
+                co_code = f"CO{m_rb.group(1)}"
+                version_index = int(m_rb.group(2) or "0")
+                cos = await svc.get_course_outcomes(course_id)
+                tgt = _resolve_co_by_code(cos, co_code)
+                if not tgt:
+                    return {"reply": f"CO {co_code} not found.", "data": None}
+                try:
+                    rolled = await svc.rollback_co_to_version(course_id=course_id, co_id=tgt.id, version_index=version_index)
+                    bl = str(rolled.bloom_level.value if hasattr(rolled.bloom_level, "value") else rolled.bloom_level)
+                    return {
+                        "reply": (
+                            f"**{co_code} rolled back to version {version_index}.** ✓\n\n"
+                            f"Statement: _{rolled.statement}_\n"
+                            f"BT Level: {bl.capitalize()}\n\n"
+                            "Continue reviewing or type **'save'** to finalise."
+                        ),
+                        "data": {"co_code": co_code, "statement": rolled.statement, "bloom_level": bl, "version_index": version_index},
+                    }
+                except Exception as exc:
+                    return {"reply": f"Rollback failed: {exc}", "data": None}
+
             # Single CO regeneration
             if intent == "regenerate_single_co" or _re.search(r"(redo|regenerate|regen|rewrite|change).*co\d+", msg_lower):
                 m = _re.search(r"co(\d+)", msg_lower)
                 if m:
                     co_code = f"CO{m.group(1)}"
                     cos = await svc.get_course_outcomes(course_id)
-                    tgt = next((c for c in cos if c.code.upper() == co_code.upper()), None)
+                    tgt = _resolve_co_by_code(cos, co_code)
                     if tgt:
                         updated = await svc.regenerate_single_co(course_id=course_id, co_id=tgt.id)
                         bl = str(updated.bloom_level.value if hasattr(updated.bloom_level, "value") else updated.bloom_level)
@@ -508,6 +614,114 @@ async def generate_co_node(state: OBEGraphState) -> dict:  # noqa: C901
                         }
                     return {"reply": f"CO {co_code} not found. Check the CO code.", "data": None}
                 return {"reply": "Please specify which CO to redo (e.g., **'redo CO3 only'**).", "data": None}
+
+            # CHANGE COx BT TO <L1..L6 or bloom word>
+            m_bt = _re.search(r"\bchange\s+co(\d+)\s+bt\s+to\s+(l[1-6]|remember|understand|apply|analy[sz]e|evaluate|create)\b", msg_lower)
+            if m_bt:
+                co_code = f"CO{m_bt.group(1)}"
+                target = m_bt.group(2).lower()
+                l_to_bloom = {"l1": "remember", "l2": "understand", "l3": "apply", "l4": "analyze", "l5": "evaluate", "l6": "create"}
+                new_bloom = l_to_bloom.get(target, target)
+                cos = await svc.get_course_outcomes(course_id)
+                tgt = _resolve_co_by_code(cos, co_code)
+                if not tgt:
+                    return {"reply": f"CO {co_code} not found.", "data": None}
+                try:
+                    result = await svc.update_co_statement(course_id=course_id, co_id=tgt.id, new_statement=tgt.statement, new_bloom_level=new_bloom)
+                    return {"reply": f"**{co_code} Bloom level updated to {new_bloom.capitalize()}.** ✓", "data": result}
+                except Exception as exc:
+                    return {"reply": f"BT change failed: {exc}", "data": None}
+
+            # SET COx AS "<statement>"
+            m_set = _re.search(r"\bset\s+co(\d+)\s+as\s+['\"](.+?)['\"]\s*$", message.strip(), flags=_re.IGNORECASE | _re.DOTALL)
+            if m_set:
+                co_code = f"CO{m_set.group(1)}"
+                statement = m_set.group(2).strip()
+                cos = await svc.get_course_outcomes(course_id)
+                tgt = _resolve_co_by_code(cos, co_code)
+                if not tgt:
+                    return {"reply": f"CO {co_code} not found.", "data": None}
+                # Mixed-verb Bloom detection: if verbs from multiple Bloom bands are present,
+                # ask the faculty to choose explicitly instead of auto-picking.
+                verb = _re.search(r"students\s+will\s+be\s+able\s+to\s+([a-zA-Z\\-]+)", statement, flags=_re.IGNORECASE)
+                v = (verb.group(1).lower() if verb else "")
+                bloom_map = {
+                    "define": "remember", "list": "remember", "recall": "remember", "identify": "remember", "state": "remember", "name": "remember",
+                    "explain": "understand", "describe": "understand", "summarize": "understand", "summarise": "understand", "classify": "understand", "interpret": "understand",
+                    "apply": "apply", "implement": "apply", "solve": "apply", "use": "apply", "compute": "apply", "execute": "apply", "demonstrate": "apply",
+                    "analyze": "analyze", "analyse": "analyze", "compare": "analyze", "differentiate": "analyze", "examine": "analyze", "contrast": "analyze",
+                    "evaluate": "evaluate", "justify": "evaluate", "critique": "evaluate", "assess": "evaluate", "recommend": "evaluate", "select": "evaluate",
+                    "design": "create", "develop": "create", "construct": "create", "formulate": "create", "produce": "create", "build": "create", "create": "create",
+                }
+                # Scan for all Bloom verbs present in the statement
+                bands_present: set[str] = set()
+                stmt_l = statement.lower()
+                for verb_word, bloom in bloom_map.items():
+                    if f" {verb_word.lower()} " in f" {stmt_l} ":
+                        bands_present.add(bloom)
+
+                # If verbs from multiple Bloom bands (e.g., analyze + evaluate), ask user to choose.
+                if len(bands_present) > 1:
+                    bands_str = ", ".join(sorted(bands_present))
+                    return {
+                        "reply": (
+                            f"This CO statement uses verbs from multiple Bloom levels ({bands_str}).\n\n"
+                            f"Please choose the intended level first, then confirm:\n"
+                            f"- `change {co_code} bt to L4`\n"
+                            f"- or `change {co_code} bt to L5`\n\n"
+                            "After that, you can re-run `set` if needed."
+                        ),
+                        "data": {"co_code": co_code, "bands_detected": sorted(bands_present)},
+                    }
+
+                inferred = bloom_map.get(v)
+                if not inferred:
+                    # Fallback to LLM-based verb classification when verb is unknown
+                    try:
+                        from app.ai_engine.llm.llm_client import LLMClient
+                        llm = LLMClient()
+                        cls_prompt = (
+                            "Classify the Bloom's Taxonomy level of the MAIN action verb in this Course Outcome.\n"
+                            "Respond with ONLY one of: remember, understand, apply, analyze, evaluate, create.\n\n"
+                            f"CO statement: {statement}"
+                        )
+                        level = (await llm.generate_completion(
+                            cls_prompt,
+                            system_prompt=get_system_prompt("bloom_detection"),
+                        ) or "").strip().lower()
+                        if level in {"remember", "understand", "apply", "analyze", "analyse", "evaluate", "create"}:
+                            inferred = "analyze" if level == "analyse" else level
+                    except Exception as exc:
+                        logger.warning(f"LLM verb classification failed for {co_code}: {exc}")
+                if not inferred:
+                    inferred = str(tgt.bloom_level.value if hasattr(tgt.bloom_level, "value") else tgt.bloom_level)
+                try:
+                    result = await svc.update_co_statement(course_id=course_id, co_id=tgt.id, new_statement=statement, new_bloom_level=inferred)
+                    return {"reply": f"**{co_code} updated.** ✓", "data": result}
+                except Exception as exc:
+                    return {"reply": f"Failed to set {co_code}: {exc}", "data": None}
+
+            # REPHRASE COx — <instruction>
+            m_re = _re.search(r"\brephrase\s+co(\d+)\b(?:\s*[-:]\s*(.+))?$", message.strip(), flags=_re.IGNORECASE | _re.DOTALL)
+            if m_re:
+                co_code = f"CO{m_re.group(1)}"
+                focus = (m_re.group(2) or "").strip()
+                cos = await svc.get_course_outcomes(course_id)
+                tgt = _resolve_co_by_code(cos, co_code)
+                if not tgt:
+                    return {"reply": f"CO {co_code} not found.", "data": None}
+                # Use existing single-CO regeneration with a reason hint.
+                updated = await svc.regenerate_single_co(course_id=course_id, co_id=tgt.id, reason=(f"Rephrase request: {focus}" if focus else "Rephrase request"))
+                bl = str(updated.bloom_level.value if hasattr(updated.bloom_level, "value") else updated.bloom_level)
+                return {
+                    "reply": (
+                        f"**{co_code} rephrased!** ✓\n\n"
+                        f"New statement: _{updated.statement}_\n"
+                        f"BT Level: {bl.capitalize()}\n\n"
+                        "Continue reviewing or type **'save'** to finalise."
+                    ),
+                    "data": {"co_code": co_code, "statement": updated.statement, "bloom_level": bl},
+                }
 
             # Save intent
             if any(k in msg_lower for k in ("save", "done", "finalise", "finalize", "complete")) or intent == "approve_cos":
@@ -536,6 +750,10 @@ async def generate_co_node(state: OBEGraphState) -> dict:  # noqa: C901
                 "reply": (
                     f"**Current COs ({len(cos)}):**\n\n{co_lines}\n\n"
                     "- Type **'redo CO2 only'** to regenerate a specific CO\n"
+                    "- Type **'rephrase CO1 - make it more specific to linked lists'**\n"
+                    "- Type **'change CO2 bt to L5'**\n"
+                    "- Type **'set CO4 as \"Students will be able to ...\"'**\n"
+                    "- Type **'rollback CO3 0'** to restore previous CO3 version\n"
                     "- Type **'why is CO3 Level 4?'** for Bloom's reasoning\n"
                     "- Type **'save'** to finalise"
                 ),
@@ -775,14 +993,33 @@ async def calculate_attainment_node(state: OBEGraphState) -> dict:
         summary = await svc.get_course_attainment_summary(course_id)
         avg_co  = summary.get("average_co_attainment", 0)
         avg_po  = summary.get("average_po_attainment", 0)
+        co_rows = summary.get("co_attainments", [])
+
+        # Build NBA-format CO attainment table
+        table_lines = ["CO | Direct% | Indirect% | Final% | Level | Status"]
+        table_lines.append("-" * 60)
+        for co in co_rows:
+            direct  = co.get("direct_attainment", co.get("attainment_percentage", 0))
+            indirect = co.get("indirect_attainment", 0)
+            final   = co.get("final_attainment", co.get("attainment_percentage", 0))
+            level   = co.get("attainment_level", "Level 1")
+            status  = "CAP Required ✗" if "1" in str(level) else "Attained ✓"
+            table_lines.append(
+                f"{co.get('co_code','?')} | {direct:.1f} | {indirect:.1f} | {final:.1f} | {level} | {status}"
+            )
+        table_str = "\n".join(table_lines)
+
         return {
             "reply": (
-                f"**Attainment Summary – course `{course_id}`**\n\n"
-                f"- Average CO Attainment: **{avg_co:.1f}%**\n"
-                f"- Average PO Attainment: **{avg_po:.1f}%**\n"
-                f"- Overall Level: **{summary.get('overall_level', '–')}**\n\n"
-                "Visualise: **GET /api/v1/visualization/{course_id}**\n"
-                "Download:  **GET /api/v1/reports/{course_id}/download?format=pdf**"
+                f"**NBA CO Attainment Summary — course `{course_id}`**\n\n"
+                f"Formula: Final_CO_att = (Direct × 0.80) + (Indirect × 0.20)\n"
+                f"Level 3 ≥ 60% | Level 2 = 50–59% | Level 1 < 50% (CAP Required)\n\n"
+                f"```\n{table_str}\n```\n\n"
+                f"Average CO Attainment: **{avg_co:.1f}%** | "
+                f"Average PO Attainment: **{avg_po:.1f}%** | "
+                f"Overall Level: **{summary.get('overall_level', '–')}**\n\n"
+                "Visualise: `GET /api/v1/visualization/{course_id}`\n"
+                "Download:  `GET /api/v1/reports/{course_id}/download?format=pdf`"
             ),
             "data": summary,
         }
@@ -810,14 +1047,38 @@ async def calculate_po_attainment_node(state: OBEGraphState) -> dict:
         from app.modules.attainment_engine.services.attainment_service import AttainmentService
         session = state["db_session"]
         svc = AttainmentService(session)
-        po_rows = await svc.calculate_program_outcome_attainments(course_id, program_id)
+        po_rows  = await svc.calculate_program_outcome_attainments(course_id, program_id)
         pso_rows = await svc.calculate_pso_attainments(course_id, program_id)
+
+        # Build NBA-format PO attainment table
+        po_table = ["PO/PSO | Att% | Level | Status"]
+        po_table.append("-" * 45)
+        for po in po_rows:
+            pct   = float(po.get("attainment_percentage", 0))
+            level = po.get("attainment_level", "Level 1")
+            status = "Met ✓" if "1" not in str(level) else "Not Met ✗"
+            po_table.append(f"{po.get('po_code','?')} | {pct:.1f}% | {level} | {status}")
+        for pso in pso_rows:
+            pct   = float(pso.get("attainment_percentage", 0))
+            level = pso.get("attainment_level", "Level 1")
+            status = "Met ✓" if "1" not in str(level) else "Not Met ✗"
+            po_table.append(f"{pso.get('pso_code','?')} | {pct:.1f}% | {level} | {status}")
+        table_str = "\n".join(po_table)
+
         return {
             "reply": (
-                f"PO/PSO attainment calculated for course `{course_id}` and program `{program_id}`.\n"
-                f"PO rows: **{len(po_rows)}**, PSO rows: **{len(pso_rows)}**"
+                f"**NBA PO/PSO Attainment — course `{course_id}` / program `{program_id}`**\n\n"
+                f"Formula: Course_PO_att = Σ(Final_CO_att × W) / Σ(W)\n"
+                f"Example: CO1=68%(w=3), CO2=74%(w=2) → PO1 = [(68×3)+(74×2)]/5 = 70.4%\n\n"
+                f"```\n{table_str}\n```\n\n"
+                f"PO rows: **{len(po_rows)}** | PSO rows: **{len(pso_rows)}**"
             ),
-            "data": {"course_id": course_id, "program_id": program_id, "po_attainments": po_rows, "pso_attainments": pso_rows},
+            "data": {
+                "course_id": course_id,
+                "program_id": program_id,
+                "po_attainments": po_rows,
+                "pso_attainments": pso_rows,
+            },
         }
     except Exception as exc:
         logger.error(f"calculate_po_attainment_node: {exc}")
@@ -832,11 +1093,15 @@ async def detect_bloom_node(state: OBEGraphState) -> dict:
         from app.ai_engine.llm.llm_client import LLMClient
         llm    = LLMClient()
         prompt = (
-            "Classify the Bloom's Taxonomy cognitive level of the following question or text. "
+            "Classify the Bloom's Taxonomy cognitive level of the following question or text.\n"
+            "Use the BT keyword table from your system instructions.\n"
             "Respond with ONLY one word: remember, understand, apply, analyze, evaluate, or create.\n\n"
-            f"Input: {message}"
+            f"Question/Text: {message}"
         )
-        level = (await llm.generate_completion(prompt)).strip().lower()
+        level = (await llm.generate_completion(
+            prompt,
+            system_prompt=get_system_prompt("bloom_detection")
+        ) or "").strip().lower()
         valid = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
         if level not in valid:
             level = "understand"
@@ -860,6 +1125,288 @@ async def detect_bloom_node(state: OBEGraphState) -> dict:
     except Exception as exc:
         logger.error(f"detect_bloom_node: {exc}")
         return {"reply": f"Error detecting Bloom level: {exc}", "data": None}
+
+
+# ── OBE Full Wizard (Steps 5–12) ─────────────────────────────────────────────
+
+_WIZARD_INTENTS = {
+    "confirm_cos", "provide_exam_config", "provide_question_mapping",
+    "provide_marks", "obe_wizard", "start_obe_wizard",
+}
+
+
+def _fmt_co_attainment_report(result: dict) -> str:
+    """Format ThreeMessageFlowService calculation_complete result into chatbot reply."""
+    lines: list[str] = []
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append(" CO ATTAINMENT REPORT")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+    co_rows = result.get("co_attainment_table", [])
+    if co_rows:
+        lines.append("\n**CO Attainment Summary:**")
+        lines.append(f"{'CO':<6} {'FA%':>6} {'SA%':>6} {'Direct%':>8} {'Indirect%':>10} {'Final%':>7} {'Level':<8} {'Status'}")
+        lines.append("-" * 70)
+        for r in co_rows:
+            lines.append(
+                f"{r.get('co',''):<6} "
+                f"{r.get('fa_att',0):>6.1f} "
+                f"{r.get('sa_att',0):>6.1f} "
+                f"{r.get('direct',0):>8.1f} "
+                f"{r.get('indirect',0):>10.1f} "
+                f"{r.get('final',0):>7.1f} "
+                f"{r.get('level',''):8} "
+                f"{r.get('status','')}"
+            )
+
+    po_rows = result.get("po_attainment_table", [])
+    if po_rows:
+        lines.append("\n**PO/PSO Attainment:**")
+        lines.append(f"{'PO/PSO':<8} {'Att%':>6} {'Level':<8} {'Status'}")
+        lines.append("-" * 40)
+        for r in po_rows:
+            lines.append(
+                f"{r.get('po',''):8} {r.get('attainment',0):>6.1f} "
+                f"{r.get('level',''):8} {r.get('status','')}"
+            )
+    pso_rows = result.get("pso_attainment_table", [])
+    for r in pso_rows:
+        lines.append(
+            f"{r.get('pso',''):8} {r.get('attainment',0):>6.1f} "
+            f"{r.get('level',''):8} {r.get('status','')}"
+        )
+
+    gap_rows = result.get("gap_analysis", [])
+    if gap_rows:
+        lines.append("\n**Gap Analysis & CAP:**")
+        for g in gap_rows:
+            lines.append(f"\n⚠️  {g.get('co','')} — Achieved {g.get('achieved',0):.1f}% | Target: {g.get('target_level','')} | {g.get('severity','')}")
+            for action in g.get("suggested_actions", []):
+                lines.append(f"   → {action}")
+            if g.get("weak_questions"):
+                lines.append(f"   Weak questions: {', '.join(g['weak_questions'][:3])}")
+    else:
+        lines.append("\n✅ No attainment gaps detected. All COs met target level.")
+
+    warnings = result.get("warnings", [])
+    if warnings:
+        lines.append("\n**Warnings:**")
+        for w in warnings:
+            lines.append(f"⚠️  {w}")
+
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("Next: type **'generate report'** to export PDF/Excel.")
+    return "\n".join(lines)
+
+
+def _fmt_wizard_status(result: dict) -> str:
+    """Convert any ThreeMessageFlowService result dict into a readable chatbot reply."""
+    status = result.get("status", "")
+    message = result.get("message", "")
+
+    if status == "calculation_complete":
+        return _fmt_co_attainment_report(result)
+
+    if status == "cos_generated":
+        cos = result.get("cos", [])
+        co_lines = "\n".join(
+            f"✅ **{c.get('id','')}** — BT {c.get('bt_level','')} | {c.get('statement','')[:100]}"
+            for c in cos
+        )
+        return (
+            f"I have generated **{len(cos)} Course Outcomes**:\n\n"
+            f"{co_lines}\n\n"
+            f"{message}\n\n"
+            "Type **CONFIRM** to proceed to CO-PO mapping, or **EDIT** to regenerate."
+        )
+
+    if status == "mapping_preview":
+        density = result.get("matrix_density", 0)
+        density_pct = round(density * 100, 1)
+        warnings = result.get("warnings", [])
+        warn_text = ("\n".join(f"⚠️  {w}" for w in warnings[:3])) if warnings else "✅ No warnings"
+        return (
+            f"**CO-PO Mapping Draft Ready**\n\n"
+            f"Matrix density: **{density_pct}%** {'✅' if 30 <= density_pct <= 60 else '⚠️'}\n"
+            f"{warn_text}\n\n"
+            f"{message}\n\n"
+            "Type **CONFIRM** to save mapping, or **EDIT** to revise."
+        )
+
+    if status == "mapping_generated":
+        return (
+            f"✅ **CO-PO Mapping Saved**\n\n"
+            f"{message}\n\n"
+            "**STEP 3 — Exam Configuration**\n"
+            "Please provide exam details. Example:\n"
+            "```json\n"
+            '{"exam_config": {"fa_method": "best_n_of_m", "fa_best_n": 3, "threshold_pct": 40,\n'
+            ' "fa_weight": 40, "sa_weight": 60, "direct_weight": 80, "indirect_weight": 20,\n'
+            ' "target_level": 2,\n'
+            ' "exams": [{"exam_id": "T1", "exam_type": "FA", "question_marks": {"Q1": 10, "Q2": 10}},\n'
+            '           {"exam_id": "ENDSEM", "exam_type": "SA", "question_marks": {"Q1": 20}}]}}\n'
+            "```"
+        )
+
+    if status == "exam_config_preview":
+        cfg = result.get("exam_config", {})
+        summary = result.get("exam_config_summary") or {}
+        fa_exams = summary.get("fa_exams") or []
+        sa_exams = summary.get("sa_exams") or []
+        fa_labels = ", ".join(str(item.get("display_name") or item.get("exam_id") or "") for item in fa_exams) or "None"
+        sa_labels = ", ".join(str(item.get("display_name") or item.get("exam_id") or "") for item in sa_exams) or "None"
+        warnings = result.get("warnings") or []
+        warning_text = "\n".join(f"⚠️  {warning}" for warning in warnings) if warnings else ""
+        return (
+            "Exam configuration saved draft.\n\n"
+            "─────────────────────────────────────────────────────────\n"
+            "FORMATIVE ASSESSMENTS (FA)\n"
+            "─────────────────────────────────────────────────────────\n"
+            f"Tests conducted : {fa_labels} ({summary.get('fa_count', 0)} tests)\n"
+            f"Questions per test : {fa_exams[0].get('question_count') if fa_exams else '—'} questions\n"
+            f"Marks per question : {fa_exams[0].get('marks_per_question') if fa_exams else '—'} marks\n"
+            f"Total marks per test : {fa_exams[0].get('total_marks') if fa_exams else '—'} marks\n"
+            f"Threshold for pass : {summary.get('threshold_pct', cfg.get('threshold_pct', 40))}% of {fa_exams[0].get('total_marks') if fa_exams else '—'} = {fa_exams[0].get('threshold_marks') if fa_exams else '—'} marks\n"
+            f"FA aggregation method : {cfg.get('fa_method', '')} (best {cfg.get('fa_best_n', '')})\n"
+            f"FA contribution to CO att : {summary.get('fa_weight', cfg.get('fa_weight', ''))}%\n\n"
+            "─────────────────────────────────────────────────────────\n"
+            "SUMMATIVE ASSESSMENT (SA)\n"
+            "─────────────────────────────────────────────────────────\n"
+            f"Exams conducted : {sa_labels} ({summary.get('sa_count', 0)} exam)\n"
+            f"Questions : {sa_exams[0].get('question_count') if sa_exams else '—'} questions\n"
+            f"Marks per question : {sa_exams[0].get('marks_per_question') if sa_exams else '—'} marks\n"
+            f"Total marks : {sa_exams[0].get('total_marks') if sa_exams else '—'} marks\n"
+            f"Threshold for pass : {summary.get('threshold_pct', cfg.get('threshold_pct', 40))}% of {sa_exams[0].get('total_marks') if sa_exams else '—'} = {sa_exams[0].get('threshold_marks') if sa_exams else '—'} marks\n"
+            f"SA contribution to CO att : {summary.get('sa_weight', cfg.get('sa_weight', ''))}%\n\n"
+            "─────────────────────────────────────────────────────────\n"
+            "WEIGHTAGE SUMMARY\n"
+            "─────────────────────────────────────────────────────────\n"
+            f"FA weight : {summary.get('fa_weight', cfg.get('fa_weight', ''))}% ✅\n"
+            f"SA weight : {summary.get('sa_weight', cfg.get('sa_weight', ''))}% ✅\n"
+            f"Total : {float(summary.get('fa_weight', cfg.get('fa_weight', 0)) or 0) + float(summary.get('sa_weight', cfg.get('sa_weight', 0)) or 0):.0f}% ✅\n"
+            f"Direct:Indirect blend : {summary.get('direct_weight', cfg.get('direct_weight', ''))}:{summary.get('indirect_weight', cfg.get('indirect_weight', ''))} ✅\n"
+            "─────────────────────────────────────────────────────────\n\n"
+            f"{warning_text + chr(10) if warning_text else ''}"
+            f"{message}\n\n"
+            "Type **CONFIRM** to lock exam config, or **EDIT** to revise."
+        )
+
+    if status == "exam_config_collecting":
+        missing = result.get("missing_fields") or []
+        draft = result.get("exam_config_draft") or {}
+        return (
+            "**STEP 3 — Exam Configuration In Progress**\n\n"
+            f"Captured exams: {', '.join(str(item.get('exam_id')) for item in (draft.get('exams') or [])) or 'None yet'}\n"
+            f"Still needed: {', '.join(missing) if missing else 'Nothing'}\n\n"
+            f"{message}"
+        )
+
+    if status == "exam_config_confirmed":
+        return (
+            f"✅ **Exam Configuration Locked**\n\n"
+            f"{message}\n\n"
+            "**STEP 4 — Question → CO Mapping**\n"
+            "You can now send either:\n"
+            "1. `T1: Q1=CO1, Q2=CO2, Q3=CO1`\n"
+            "2. Raw question text lines such as `Q1 Explain asymptotic notation`\n"
+            "3. JSON mapping if you prefer a structured payload."
+        )
+
+    if status == "question_mapping_preview":
+        qm = result.get("question_mapping", [])
+        preview_lines = "\n".join(
+            f"  {m.get('exam_id','')} {m.get('question_id','')} → {m.get('co_id','')} ({m.get('bt_level','')})"
+            for m in qm[:8]
+        )
+        return (
+            f"**Question Mapping Preview ({len(qm)} questions):**\n{preview_lines}\n\n"
+            f"{message}\n\n"
+            "Type **CONFIRM** to lock mapping, or **EDIT** to revise."
+        )
+
+    if status == "question_mapping_collecting":
+        missing = result.get("missing_fields") or []
+        mapped = result.get("question_mapping") or []
+        return (
+            f"**Question Mapping In Progress**\n\n"
+            f"Mapped so far: {len(mapped)} question(s)\n"
+            f"Remaining: {', '.join(missing) if missing else 'None'}\n\n"
+            f"{message}"
+        )
+
+    if status == "question_mapping_confirmed":
+        return (
+            f"✅ **Question Mapping Locked**\n\n"
+            f"{message}\n\n"
+            "**STEP 5 — Student Marks + Indirect Survey**\n"
+            "Send marks JSON. Example:\n"
+            "```json\n"
+            '{"marks_data": [{"exam_id": "T1", "students": [\n'
+            '  {"student_id": "22CS001", "marks": {"Q1": 8, "Q2": 7}}\n'
+            ']}],\n'
+            '"indirect_data": {"responses": 54, "co_mean_ratings": {"CO1": 3.94, "CO2": 3.81}}}\n'
+            "```"
+        )
+
+    # Generic fallback — just show the message
+    return message or f"Status: {status}"
+
+
+async def obe_wizard_node(state: OBEGraphState) -> dict:  # noqa: C901
+    """
+    Full OBE wizard node — wraps ThreeMessageFlowService to handle Steps 5–12:
+    CO confirmation → exam config → question mapping → marks → attainment report.
+    """
+    course_id = state.get("course_id")
+    user_id = state.get("user_id") or "anon"
+    session = state["db_session"]
+    message = state.get("message", "")
+    session_id = state.get("session_id", "")
+
+    if not course_id:
+        return {
+            "reply": (
+                "Please select a course first using the course dropdown above, "
+                "then send your message again."
+            ),
+            "data": None,
+        }
+
+    try:
+        from app.services.three_message_flow_service import ThreeMessageFlowService
+        from app.core.database.models import User as _User
+        from sqlalchemy import select as _select
+
+        # Resolve user role for the service
+        user_role = "faculty"
+        if user_id and user_id != "anon":
+            try:
+                u_result = await session.execute(_select(_User).where(_User.id == user_id))
+                u = u_result.scalar_one_or_none()
+                if u:
+                    user_role = str(u.role.value if hasattr(u.role, "value") else u.role).lower()
+            except Exception:
+                pass
+
+        svc = ThreeMessageFlowService(session=session, user_id=user_id, user_role=user_role)
+        result = await svc.process_message(
+            text=message,
+            session_id=session_id,
+            course_id=course_id,
+        )
+
+        reply = _fmt_wizard_status(result)
+        return {"reply": reply, "data": result}
+
+    except Exception as exc:
+        logger.error(f"obe_wizard_node error: {exc}")
+        return {
+            "reply": (
+                f"OBE wizard error: {exc}\n\n"
+                "Type **help** to see all available features."
+            ),
+            "data": None,
+        }
 
 
 # ── Func 7 – Reports & Visualisation ─────────────────────────────────────────
@@ -948,15 +1495,15 @@ async def general_llm_node(state: OBEGraphState) -> dict:
     course_id = state.get("course_id")
     try:
         from app.ai_engine.llm.llm_client import LLMClient
-        llm     = LLMClient()
-        context = (
-            "You are an OBE (Outcome Based Education) assistant for faculty. "
-            + (f"Current course: {course_id}. " if course_id else "")
-            + "Help with CO generation, CO-PO mapping, attainment calculation, "
-            "Bloom's taxonomy, and report generation.\n\n"
-            f"Faculty: {message}"
+        llm = LLMClient()
+        user_prompt = (
+            (f"Current course context: {course_id}.\n\n" if course_id else "")
+            + f"Faculty question: {message}"
         )
-        reply = await llm.generate_completion(context)
+        reply = await llm.generate_completion(
+            user_prompt,
+            system_prompt=get_system_prompt("general")
+        )
         return {
             "reply": reply or "Type **help** to see all available OBE features.",
             "data": None,
@@ -964,7 +1511,7 @@ async def general_llm_node(state: OBEGraphState) -> dict:
     except Exception as exc:
         logger.error(f"general_llm_node: {exc}")
         return {
-            "reply": "I'm your OBE assistant. Type **help** for a full list of features.",
+            "reply": "I'm your NBA/OBE assistant. Type **help** for a full list of features.",
             "data": None,
         }
 
@@ -975,6 +1522,7 @@ async def general_llm_node(state: OBEGraphState) -> dict:
 
 _NODE_MAP: Dict[str, Any] = {
     "nlu_node":                     nlu_node,
+    "obe_wizard_node":              obe_wizard_node,
     "generate_co_node":             generate_co_node,
     "configure_exam_node":          configure_exam_node,
     "map_co_po_node":               map_co_po_node,
@@ -1091,6 +1639,7 @@ def get_graph_registry() -> Dict[str, Any]:
             ]),
             # 4) Attainment computation workflow graph
             "attainment_flow": _build_specialized_graph([
+                "obe_wizard_node",
                 "calculate_attainment_node",
                 "calculate_po_attainment_node",
                 "map_co_po_node",

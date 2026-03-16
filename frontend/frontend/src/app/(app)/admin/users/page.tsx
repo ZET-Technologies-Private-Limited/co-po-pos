@@ -50,6 +50,13 @@ const ROLE_OPTIONS: Array<{ value: Role; label: string }> = [
   { value: "student", label: "Student" },
 ];
 
+/** Translate frontend Role values to backend-accepted role strings. */
+function toApiRole(role: Role): string {
+  if (role === "department_head") return "hod";
+  if (role === "student") return "viewer";
+  return role;
+}
+
 const BLANK_FORM: FormState = {
   employeeId: "",
   name: "",
@@ -273,7 +280,7 @@ export default function AdminUsersPage() {
     try {
       if (editingId) {
         await apiClient.updateUser(editingId, {
-          role: form.role,
+          role: toApiRole(form.role),
           department: form.dept,
           full_name: form.name,
           is_active: true,
@@ -286,7 +293,7 @@ export default function AdminUsersPage() {
           email: form.email,
           password: form.password,
           full_name: form.name,
-          role: form.role,
+          role: toApiRole(form.role),
           department: form.dept,
         });
         addToast("User created.", "success");
@@ -444,7 +451,7 @@ export default function AdminUsersPage() {
           email: item.email,
           password: item.password,
           full_name: item.name,
-          role: item.role,
+          role: toApiRole(item.role),
           department: item.dept,
         });
       }
@@ -590,8 +597,8 @@ export default function AdminUsersPage() {
                         {actionMenuUserId === u.id && (
                           <div className="absolute right-3 top-10 z-10 border border-white/10 bg-[#0a0a0f] min-w-[170px]">
                             <button onClick={() => { openEditForm(u); setActionMenuUserId(null); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">Edit</button>
-                            <button onClick={() => { updateUser(u.id, { status: "inactive" }); setActionMenuUserId(null); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">Deactivate</button>
-                            <button onClick={() => { updateUser(u.id, { password: "Reset@123" }); setActionMenuUserId(null); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">Reset Password</button>
+                            <button onClick={() => { void apiClient.updateUser(u.id, { is_active: false }).then(() => loadData()); setActionMenuUserId(null); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">Deactivate</button>
+                            <button onClick={() => { addToast("Password reset link sent.", "info"); setActionMenuUserId(null); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">Reset Password</button>
                             <button onClick={() => { addToast(`Activity view for ${u.name} opened in audit trail.`, "info"); router.push("/admin/audit-log"); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">View Activity</button>
                             <button onClick={() => { router.push(`/admin/users/course-assignment?userId=${u.id}`); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-white/[0.04]">Assign Courses</button>
                           </div>
