@@ -45,12 +45,12 @@ const FEATURES = [
 ];
 
 function Divider() {
-  return <div className="w-full h-[1px] bg-white/8 my-2" />;
+  return <div className="w-full h-[1px] bg-gray-200 my-2" />;
 }
 
 export default function LandingPage() {
   return (
-    <div className="relative bg-cosmic selection:bg-brand/30 selection:text-white overflow-x-hidden">
+    <div className="relative bg-white selection:bg-blue-200 selection:text-gray-900 overflow-x-hidden">
 
       {/* 3D Canvas — right side, behind text */}
       <div className="fixed inset-y-0 right-0 w-full md:w-3/5 z-0 pointer-events-none">
@@ -59,8 +59,8 @@ export default function LandingPage() {
             <ProfessionalAbstract3D />
           </Suspense>
         </Canvas>
-        <div className="absolute inset-0 bg-gradient-to-r from-cosmic via-cosmic/60 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-b from-cosmic/80 via-transparent to-cosmic/80" />
+        <div className="absolute inset-0 bg-gradient-to-r from-white via-white/70 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-transparent to-white/60" />
       </div>
 
       <div className="relative z-10">
@@ -76,32 +76,32 @@ export default function LandingPage() {
               transition={{ duration: 1, ease: "easeOut" }}
               className="max-w-4xl"
             >
-              <p className="mb-6 flex items-center gap-3 text-xs font-mono text-brand uppercase tracking-[0.25em]">
-                <span className="w-8 h-[1px] bg-brand inline-block" />
+              <p className="mb-6 flex items-center gap-3 text-xs font-mono text-blue-600 uppercase tracking-[0.25em] font-medium">
+                <span className="w-8 h-[1px] bg-blue-600 inline-block" />
                 Academic Intelligence Platform
               </p>
 
-              <h1 className="text-[clamp(3rem,8vw,6.5rem)] font-display font-medium text-white leading-[1.02] tracking-tight mb-8">
+              <h1 className="text-[clamp(3rem,8vw,6.5rem)] font-display font-medium text-gray-900 leading-[1.02] tracking-tight mb-8">
                 Precision mapping<br />
                 for curriculum<br />
-                <em className="not-italic text-white/35">outcomes.</em>
+                <em className="not-italic text-gray-500">outcomes.</em>
               </h1>
 
-              <p className="text-xl md:text-2xl text-white/45 max-w-xl font-light leading-relaxed mb-14">
+              <p className="text-xl md:text-2xl text-gray-600 max-w-xl font-light leading-relaxed mb-14">
                 Automate CO-PO-PSO alignment with neural extraction — built for universities that refuse to compromise on accreditation.
               </p>
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
                 <Link
                   href="/login"
-                  className="group inline-flex items-center gap-3 px-8 py-4 bg-white text-black text-sm font-medium tracking-wide hover:bg-white/90 transition-colors"
+                  className="group inline-flex items-center gap-3 px-8 py-4 bg-blue-600 text-white text-sm font-medium tracking-wide hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
                 >
                   Access Dashboard
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Link>
                 <Link
                   href="/login"
-                  className="text-sm text-white/40 hover:text-white/70 transition-colors font-mono uppercase tracking-widest flex items-center gap-2"
+                  className="text-sm text-gray-600 hover:text-gray-900 transition-colors font-mono uppercase tracking-widest flex items-center gap-2"
                 >
                   View Demo <ArrowUpRight className="w-3 h-3" />
                 </Link>
@@ -121,8 +121,8 @@ export default function LandingPage() {
             <div className="py-8 flex items-center gap-12 overflow-x-auto scrollbar-none">
               {STATS.map((s, i) => (
                 <div key={i} className="flex-shrink-0 flex items-baseline gap-2">
-                  <span className="text-3xl font-display font-medium text-white">{s.value}</span>
-                  <span className="text-xs font-mono text-white/35 uppercase tracking-widest">{s.label}</span>
+                  <span className="text-3xl font-display font-medium text-gray-900">{s.value}</span>
+                  <span className="text-xs font-mono text-gray-600 uppercase tracking-widest font-medium">{s.label}</span>
                 </div>
               ))}
             </div>
@@ -138,20 +138,20 @@ export default function LandingPage() {
               transition={{ duration: 1 }}
               className="max-w-2xl"
             >
-              <p className="mb-6 flex items-center justify-end gap-3 text-xs font-mono text-alert uppercase tracking-[0.25em]">
+              <p className="mb-6 flex items-center justify-end gap-3 text-xs font-mono text-red-600 uppercase tracking-[0.25em] font-medium">
                 The Compliance Burden
-                <span className="w-8 h-[1px] bg-alert inline-block" />
+                <span className="w-8 h-[1px] bg-red-600 inline-block" />
               </p>
-              <h2 className="text-[clamp(2.5rem,6vw,5rem)] font-display text-white leading-[1.05] mb-8">
+              <h2 className="text-[clamp(2.5rem,6vw,5rem)] font-display text-gray-900 leading-[1.05] mb-8">
                 Manual mapping is<br />
-                <span className="text-white/30">costly & error-prone.</span>
+                <span className="text-gray-500">costly & error-prone.</span>
               </h2>
-              <p className="text-lg text-white/45 font-light leading-relaxed">
+              <p className="text-lg text-gray-600 font-light leading-relaxed">
                 Faculty spend hundreds of hours manually categorising Bloom's Taxonomy levels and mapping course outcomes to program objectives — producing inconsistent results that stall accreditation.
               </p>
-              <div className="mt-10 flex items-center justify-end gap-8 text-sm font-mono text-white/25 uppercase tracking-widest">
+              <div className="mt-10 flex items-center justify-end gap-8 text-sm font-mono text-gray-500 uppercase tracking-widest">
                 <span>300+ hrs / cycle</span>
-                <span className="w-1 h-1 rounded-full bg-white/20 inline-block" />
+                <span className="w-1 h-1 rounded-full bg-gray-300 inline-block" />
                 <span>40% rework rate</span>
               </div>
             </motion.div>
@@ -166,16 +166,16 @@ export default function LandingPage() {
               transition={{ duration: 1 }}
               className="max-w-3xl"
             >
-              <p className="mb-6 flex items-center gap-3 text-xs font-mono text-aurora uppercase tracking-[0.25em]">
-                <span className="w-8 h-[1px] bg-aurora inline-block" />
-                The Nexus Protocol
+              <p className="mb-6 flex items-center gap-3 text-xs font-mono text-blue-600 uppercase tracking-[0.25em] font-medium">
+                <span className="w-8 h-[1px] bg-blue-600 inline-block" />
+                The Intelligence Protocol
               </p>
-              <h2 className="text-[clamp(2.5rem,6vw,5rem)] font-display text-white leading-[1.05] mb-16">
+              <h2 className="text-[clamp(2.5rem,6vw,5rem)] font-display text-gray-900 leading-[1.05] mb-16">
                 Neural networks do<br />
-                <span className="text-white/30">the heavy lifting.</span>
+                <span className="text-gray-500">the heavy lifting.</span>
               </h2>
 
-              <div className="relative pl-6 border-l border-white/10 flex flex-col gap-0">
+              <div className="relative pl-6 border-l border-gray-300 flex flex-col gap-0">
                 {FEATURES.map((f, i) => (
                   <motion.div
                     key={f.num}
@@ -183,15 +183,15 @@ export default function LandingPage() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, amount: 0.5 }}
                     transition={{ duration: 0.7, delay: i * 0.12 }}
-                    className="group py-8 border-b border-white/8 last:border-0"
+                    className="group py-8 border-b border-gray-200 last:border-0"
                   >
                     <div className="flex items-start gap-6">
-                      <span className={`text-xs font-mono ${f.accent} opacity-60 mt-1 w-6 flex-shrink-0`}>{f.num}</span>
+                      <span className={`text-xs font-mono ${f.accent === 'text-aurora' ? 'text-purple-600' : f.accent === 'text-brand' ? 'text-blue-600' : f.accent === 'text-insight' ? 'text-cyan-600' : 'text-green-600'} font-medium mt-1 w-6 flex-shrink-0`}>{f.num}</span>
                       <div>
-                        <h3 className={`text-xl font-display text-white mb-2 group-hover:${f.accent} transition-colors duration-500`}>
+                        <h3 className={`text-xl font-display text-gray-900 mb-2 group-hover:${f.accent === 'text-aurora' ? 'text-purple-600' : f.accent === 'text-brand' ? 'text-blue-600' : f.accent === 'text-insight' ? 'text-cyan-600' : 'text-green-600'} transition-colors duration-500`}>
                           {f.title}
                         </h3>
-                        <p className="text-white/45 font-light leading-relaxed">{f.body}</p>
+                        <p className="text-gray-600 font-light leading-relaxed">{f.body}</p>
                       </div>
                     </div>
                   </motion.div>
@@ -209,20 +209,20 @@ export default function LandingPage() {
               transition={{ duration: 1 }}
               className="max-w-2xl flex flex-col items-center"
             >
-              <p className="mb-6 flex items-center justify-center gap-3 text-xs font-mono text-white/30 uppercase tracking-[0.25em]">
-                <span className="w-8 h-[1px] bg-white/20 inline-block" />
+              <p className="mb-6 flex items-center justify-center gap-3 text-xs font-mono text-gray-600 uppercase tracking-[0.25em] font-medium">
+                <span className="w-8 h-[1px] bg-gray-400 inline-block" />
                 20 Modules · 1 Platform
-                <span className="w-8 h-[1px] bg-white/20 inline-block" />
+                <span className="w-8 h-[1px] bg-gray-400 inline-block" />
               </p>
-              <h2 className="text-[clamp(2.5rem,6vw,5rem)] font-display text-white leading-[1.05] mb-8">
+              <h2 className="text-[clamp(2.5rem,6vw,5rem)] font-display text-gray-900 leading-[1.05] mb-8">
                 Engineered for<br />accreditation excellence.
               </h2>
-              <p className="text-lg text-white/40 font-light mb-12 leading-relaxed max-w-lg">
+              <p className="text-lg text-gray-600 font-light mb-12 leading-relaxed max-w-lg">
                 Join institutions transforming their academic intelligence infrastructure. Prepare for your next NBA or ABET audit with a complete end-to-end SaaS ecosystem.
               </p>
               <Link
                 href="/login"
-                className="group inline-flex items-center gap-3 px-10 py-5 bg-white text-black text-sm font-medium tracking-wide hover:bg-white/90 transition-colors shadow-[0_0_40px_rgba(255,255,255,0.15)] hover:shadow-[0_0_60px_rgba(255,255,255,0.25)]"
+                className="group inline-flex items-center gap-3 px-10 py-5 bg-blue-600 text-white text-sm font-medium tracking-wide hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
               >
                 Enter the Platform
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -233,10 +233,10 @@ export default function LandingPage() {
         </main>
 
         {/* ── FOOTER STRIP ── */}
-        <footer className="relative z-10 border-t border-white/8 px-6 py-8 max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-white/25 uppercase tracking-widest">
-          <span>© {new Date().getFullYear()} Nexus Engine</span>
+        <footer className="relative z-10 border-t border-gray-200 px-6 py-8 max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono text-gray-600 uppercase tracking-widest">
+          <span>© {new Date().getFullYear()} Academic Intelligence Platform</span>
           <div className="flex items-center gap-8">
-            <Link href="/login" className="hover:text-white/60 transition-colors">Sign In</Link>
+            <Link href="/login" className="hover:text-gray-900 transition-colors">Sign In</Link>
             <span>NBA · ABET · NAAC</span>
           </div>
         </footer>
