@@ -1,29 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  /* Light Theme Color Palette */
-  --color-background: #FFFFFF;
-  --color-surface: #F9FAFB;
-  --color-surface-secondary: #F3F4F6;
-  --color-border: #E5E7EB;
-  --color-border-light: #F0F1F3;
-  --color-text-primary: #1F2937;
-  --color-text-secondary: #6B7280;
-  --color-text-tertiary: #9CA3AF;
+  /* Premium Academic Platform - Deep Color Palette */
+  --color-background: #FAFAF8;
+  --color-surface: #FFFFFF;
+  --color-surface-secondary: #F5F5F3;
+  --color-surface-tertiary: #EEEBE5;
+  --color-border: #D4D0C8;
+  --color-border-light: #E8E5DD;
+  --color-text-primary: #1A1715;
+  --color-text-secondary: #5A5651;
+  --color-text-tertiary: #8B8681;
   
-  /* Brand & Accent Colors */
-  --color-brand: #2563EB;
-  --color-brand-hover: #1D4ED8;
-  --color-brand-light: #DBEAFE;
-  --color-aurora: #06B6D4;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-error: #EF4444;
-  --color-info: #3B82F6;
+  /* Premium Brand & Accent Colors */
+  --color-brand: #1F3A7D;
+  --color-brand-hover: #152849;
+  --color-brand-light: #E8EDF9;
+  --color-secondary: #4A6FA5;
+  --color-secondary-light: #F0F4FA;
   
-  /* Additional Semantic Colors */
-  --color-accent: #7C3AED;
-  --color-secondary: #8B5CF6;
+  /* Semantic Status Colors */
+  --color-success: #2D7C4F;
+  --color-warning: #A67C2A;
+  --color-error: #8B3A3A;
+  --color-info: #4B6FA5;
+  
+  /* Accent Colors */
+  --color-accent-warm: #C18E4B;
+  --color-accent-cool: #6B8FA8;
   
   --font-display: var(--font-bricolage);
   --font-sans: var(--font-jakarta);

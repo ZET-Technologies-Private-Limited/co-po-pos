@@ -309,36 +309,36 @@ export default function LoginPage() {
 
       <div className="relative z-10 min-h-screen flex">
         {/* ── LEFT PANEL ── */}
-        <div className="hidden lg:flex flex-col justify-between w-1/2 px-20 py-16 bg-gradient-to-br from-blue-50 to-blue-100">
+        <div className="hidden lg:flex flex-col justify-between w-1/2 px-20 py-16 bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand to-aurora flex items-center justify-center">
-              <span className="text-white text-xs font-bold">N</span>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center">
+              <span className="text-slate-900 text-xs font-bold">A</span>
             </div>
-            <span className="font-display font-medium text-gray-900 tracking-widest uppercase text-sm">Nexus Engine</span>
+            <span className="font-display font-medium text-white tracking-widest uppercase text-sm">Academic Platform</span>
           </div>
 
           <div className="flex flex-col gap-8">
-            <div className="flex items-center gap-3 text-sm font-mono text-blue-700 uppercase tracking-widest font-medium">
-              <span className="w-8 h-[1px] bg-blue-600" />
-              Academic Intelligence Platform
+            <div className="flex items-center gap-3 text-sm font-mono text-amber-300 uppercase tracking-widest font-medium">
+              <span className="w-8 h-[1px] bg-amber-400" />
+              Intelligence Engine
             </div>
-            <h1 className="text-5xl lg:text-6xl font-display font-medium text-gray-900 leading-tight tracking-tight">
-              Map outcomes.<br />
-              <span className="text-gray-600">Measure attainment.</span>
+            <h1 className="text-5xl lg:text-6xl font-display font-medium text-white leading-tight tracking-tight">
+              Precision mapping<br />
+              <span className="text-slate-300">for outcomes.</span>
             </h1>
-            <p className="text-lg text-gray-700 font-light leading-relaxed max-w-md">
-              The complete CO-PO-PSO intelligence platform for accreditation-ready universities.
+            <p className="text-lg text-slate-200 font-light leading-relaxed max-w-md">
+              Neural-powered CO-PO-PSO alignment for universities that demand excellence in accreditation.
             </p>
           </div>
 
           {/* Role selector buttons */}
           <div className="flex flex-col gap-3">
-            <span className="text-[10px] font-mono text-gray-600 uppercase tracking-widest mb-1 font-medium">Platform Roles — select to access</span>
+            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mb-1 font-medium">Platform Roles — select to access</span>
             {([
-              { role: "faculty",         label: "Faculty",      desc: "Manage courses, upload marks, generate COs",          accent: "text-blue-700",   border: "border-blue-400",   bg: "bg-blue-100",   dot: "bg-blue-600" },
-              { role: "subject_lead",    label: "Course Lead",  desc: "Approve marks, track CO/PO attainment",               accent: "text-purple-700", border: "border-purple-400", bg: "bg-purple-100", dot: "bg-purple-600" },
-              { role: "department_head", label: "HOD",          desc: "Department view, reports, year-end sign-off",          accent: "text-cyan-700",   border: "border-cyan-400",   bg: "bg-cyan-100",   dot: "bg-cyan-600" },
-              { role: "admin",           label: "Admin",        desc: "User management, AY config, full system access",       accent: "text-orange-700", border: "border-orange-400", bg: "bg-orange-100", dot: "bg-orange-600" },
+              { role: "faculty",         label: "Faculty",      desc: "Manage courses, upload marks, generate COs",          accent: "text-blue-300",   border: "border-blue-500",   bg: "bg-blue-500/10",   dot: "bg-blue-400" },
+              { role: "subject_lead",    label: "Course Lead",  desc: "Approve marks, track CO/PO attainment",               accent: "text-purple-300", border: "border-purple-500", bg: "bg-purple-500/10", dot: "bg-purple-400" },
+              { role: "department_head", label: "HOD",          desc: "Department view, reports, year-end sign-off",          accent: "text-cyan-300",   border: "border-cyan-500",   bg: "bg-cyan-500/10",   dot: "bg-cyan-400" },
+              { role: "admin",           label: "Admin",        desc: "User management, AY config, full system access",       accent: "text-amber-300", border: "border-amber-500", bg: "bg-amber-500/10", dot: "bg-amber-400" },
             ] as const).map(({ role, label, desc, accent, border, bg, dot }) => {
               const active = selectedRole === role;
               return (
@@ -347,14 +347,14 @@ export default function LoginPage() {
                   type="button"
                   suppressHydrationWarning
                   onClick={() => setSelectedRole(active ? "" : role)}
-                  className={`flex items-start gap-4 px-5 py-4 border text-left transition-all ${
-                    active ? `${border} ${bg}` : "border-gray-300 hover:border-gray-400"
+                  className={`flex items-start gap-4 px-5 py-4 border text-left transition-all rounded ${
+                    active ? `${border} ${bg}` : "border-slate-700 hover:border-slate-600"
                   }`}
                 >
-                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${active ? dot : "bg-gray-400"}`} />
+                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${active ? dot : "bg-slate-600"}`} />
                   <div>
-                    <p className={`text-[10px] font-mono uppercase tracking-widest mb-0.5 font-medium ${active ? accent : "text-gray-600"}`}>{label}</p>
-                    <p className="text-gray-700 font-light text-xs leading-relaxed">{desc}</p>
+                    <p className={`text-[10px] font-mono uppercase tracking-widest mb-0.5 font-medium ${active ? accent : "text-slate-400"}`}>{label}</p>
+                    <p className="text-slate-300 font-light text-xs leading-relaxed">{desc}</p>
                   </div>
                   {active && <ArrowRight className={`w-3.5 h-3.5 shrink-0 ml-auto mt-1 ${accent}`} />}
                 </button>
@@ -364,22 +364,22 @@ export default function LoginPage() {
         </div>
 
         {/* ── RIGHT PANEL — Login Form ── */}
-        <div className="flex-1 flex items-center justify-center px-8 lg:px-20 py-16">
+        <div className="flex-1 flex items-center justify-center px-8 lg:px-20 py-16 bg-white">
           <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="w-full max-w-md">
 
             <div className="flex items-center gap-3 mb-16 lg:hidden">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand to-aurora flex items-center justify-center">
-                <span className="text-white text-xs font-bold">N</span>
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center">
+                <span className="text-slate-900 text-xs font-bold">A</span>
               </div>
-              <span className="font-display font-medium text-gray-900 tracking-widest uppercase text-sm">Nexus Engine</span>
+              <span className="font-display font-medium text-slate-900 tracking-widest uppercase text-sm">Academic Platform</span>
             </div>
 
             <motion.div variants={fadeSlideUp} className="mb-14">
-              <div className="flex items-center gap-3 text-sm font-mono text-blue-700 uppercase tracking-widest mb-6 font-medium">
-                <span className="w-8 h-[1px] bg-blue-600" />
+              <div className="flex items-center gap-3 text-sm font-mono text-amber-700 uppercase tracking-widest mb-6 font-medium">
+                <span className="w-8 h-[1px] bg-amber-600" />
                 Secure Access
               </div>
-              <h2 className="text-4xl font-display text-gray-900">Welcome back.</h2>
+              <h2 className="text-4xl font-display text-slate-900">Welcome back.</h2>
               {selectedRole && (() => {
                 const m = ROLE_META[selectedRole];
                 return m ? (
@@ -420,9 +420,9 @@ export default function LoginPage() {
               <motion.form variants={staggerContainer} onSubmit={handleLogin} className="flex flex-col gap-0" noValidate suppressHydrationWarning={true}>
 
                 {/* Department + AY */}
-                <motion.div variants={fadeSlideUp} className="grid grid-cols-2 gap-6 pb-6 border-b border-gray-300 mb-6">
+                <motion.div variants={fadeSlideUp} className="grid grid-cols-2 gap-6 pb-6 border-b border-slate-200 mb-6">
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs font-mono text-gray-700 uppercase tracking-widest font-medium">Department</label>
+                    <label className="text-xs font-mono text-slate-700 uppercase tracking-widest font-medium">Department</label>
                     <select
                       suppressHydrationWarning
                       value={dept}
@@ -436,12 +436,12 @@ export default function LoginPage() {
                         setTouched(prev => ({ ...prev, dept: true }));
                         setFieldErrors(prev => ({ ...prev, dept: dept ? "" : "Department is required" }));
                       }}
-                      className={`bg-white text-gray-900 text-sm outline-none font-light appearance-none w-full cursor-pointer border-b pb-1 ${
-                        touched.dept && fieldErrors.dept ? "border-red-500" : "border-gray-400"
+                      className={`bg-white text-slate-900 text-sm outline-none font-light appearance-none w-full cursor-pointer border-b pb-1 ${
+                        touched.dept && fieldErrors.dept ? "border-red-600" : "border-slate-300"
                       }`}
                     >
-                      <option value="" className="bg-white text-gray-900">Select</option>
-                      {DEPARTMENTS.map(d => <option key={d} value={d} className="bg-white text-gray-900">{d}</option>)}
+                      <option value="" className="bg-white text-slate-900">Select</option>
+                      {DEPARTMENTS.map(d => <option key={d} value={d} className="bg-white text-slate-900">{d}</option>)}
                     </select>
                     <AnimatePresence>
                       {touched.dept && fieldErrors.dept && (
@@ -453,18 +453,18 @@ export default function LoginPage() {
                     </AnimatePresence>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs font-mono text-gray-700 uppercase tracking-widest font-medium">Academic Year</label>
+                    <label className="text-xs font-mono text-slate-700 uppercase tracking-widest font-medium">Academic Year</label>
                     <select value={ay} onChange={e => setAY(e.target.value)}
                       suppressHydrationWarning
-                      className="bg-white text-gray-900 text-sm outline-none font-light border-none appearance-none w-full cursor-pointer">
-                      {ACTIVE_AYS.map(a => <option key={a} value={a} className="bg-white text-gray-900">{a}</option>)}
+                      className="bg-white text-slate-900 text-sm outline-none font-light border-none appearance-none w-full cursor-pointer">
+                      {ACTIVE_AYS.map(a => <option key={a} value={a} className="bg-white text-slate-900">{a}</option>)}
                     </select>
                   </div>
                 </motion.div>
 
                 {/* Employee ID */}
                 <motion.div variants={fadeSlideUp} className="flex flex-col gap-2 pb-8 mb-2">
-                  <label className="text-xs font-mono text-gray-700 uppercase tracking-widest flex items-center gap-2 font-medium">
+                  <label className="text-xs font-mono text-slate-700 uppercase tracking-widest flex items-center gap-2 font-medium">
                     <Mail className="w-3 h-3" /> Employee ID
                   </label>
                   <input
@@ -473,9 +473,9 @@ export default function LoginPage() {
                     value={email}
                     onChange={e => handleEmailChange(e.target.value)}
                     onBlur={() => { setTouched(t => ({ ...t, email: true })); setFieldErrors(e => ({ ...e, email: validateEmployeeId(email) })); }}
-                    placeholder="FAC2024001 or you@nexus.edu"
-                    className={`bg-white text-gray-900 text-xl placeholder-gray-400 outline-none w-full font-light border-b pb-3 transition-colors ${
-                      touched.email && fieldErrors.email ? "border-red-500" : "border-gray-400 focus:border-blue-600"
+                    placeholder="FAC2024001 or you@institution.edu"
+                    className={`bg-white text-slate-900 text-xl placeholder-slate-400 outline-none w-full font-light border-b pb-3 transition-colors ${
+                      touched.email && fieldErrors.email ? "border-red-600" : "border-slate-300 focus:border-amber-600"
                     }`}
                   />
                   <AnimatePresence>
@@ -490,7 +490,7 @@ export default function LoginPage() {
 
                 {/* Password */}
                 <motion.div variants={fadeSlideUp} className="flex flex-col gap-2 pb-6 mb-2">
-                  <label className="text-xs font-mono text-gray-700 uppercase tracking-widest flex items-center gap-2 font-medium">
+                  <label className="text-xs font-mono text-slate-700 uppercase tracking-widest flex items-center gap-2 font-medium">
                     <Lock className="w-3 h-3" /> Password
                   </label>
                   <div className="flex items-center gap-4">
@@ -501,24 +501,24 @@ export default function LoginPage() {
                       onChange={e => handlePasswordChange(e.target.value)}
                       onBlur={() => { setTouched(t => ({ ...t, password: true })); setFieldErrors(e => ({ ...e, password: validatePassword(password) })); }}
                       placeholder="••••••••••"
-                      className={`bg-white text-gray-900 text-xl placeholder-gray-400 outline-none flex-1 font-light border-b pb-3 transition-colors ${
-                        touched.password && fieldErrors.password ? "border-red-500" : "border-gray-400 focus:border-blue-600"
+                      className={`bg-white text-slate-900 text-xl placeholder-slate-400 outline-none flex-1 font-light border-b pb-3 transition-colors ${
+                        touched.password && fieldErrors.password ? "border-red-600" : "border-slate-300 focus:border-amber-600"
                       }`}
                     />
-                    <button suppressHydrationWarning type="button" onClick={() => setShowPass(s => !s)} className="text-gray-500 hover:text-gray-700 transition-colors shrink-0 pb-3">
+                    <button suppressHydrationWarning type="button" onClick={() => setShowPass(s => !s)} className="text-slate-500 hover:text-slate-700 transition-colors shrink-0 pb-3">
                       {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                   <AnimatePresence>
                     {touched.password && fieldErrors.password && (
                       <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                        className="text-red-600 text-xs font-mono mt-1">
+                        className="text-red-700 text-xs font-mono mt-1">
                         {fieldErrors.password}
                       </motion.p>
                     )}
                   </AnimatePresence>
                   <div className="flex justify-end mt-1">
-                    <Link href="/forgot-password" className="text-xs text-blue-600 hover:text-blue-800 transition-colors font-mono">
+                    <Link href="/forgot-password" className="text-xs text-amber-700 hover:text-amber-800 transition-colors font-mono">
                       Forgot password?
                     </Link>
                   </div>
@@ -526,10 +526,24 @@ export default function LoginPage() {
 
                 {/* Remember me */}
                 <motion.div variants={fadeSlideUp} className="flex items-center gap-2 mb-6 cursor-pointer group" onClick={() => setRememberMe(r => !r)}>
-                  <div className={`w-4 h-4 border rounded-sm flex items-center justify-center transition-colors ${rememberMe ? "border-blue-600 bg-blue-100" : "border-gray-400 group-hover:border-blue-600"}`}>
-                    {rememberMe && <div className="w-2 h-2 bg-blue-600" />}
+                  <div className={`w-4 h-4 border rounded-sm flex items-center justify-center transition-colors ${rememberMe ? "border-amber-600 bg-amber-100" : "border-slate-400 group-hover:border-amber-600"}`}>
+                    {rememberMe && <div className="w-2 h-2 bg-amber-600" />}
                   </div>
-                  <span className="text-[10px] font-mono text-gray-700 uppercase tracking-widest select-none font-medium">Remember this device for 7 days</span>
+                  <span className="text-[10px] font-mono text-slate-700 uppercase tracking-widest select-none font-medium">Remember this device for 7 days</span>
+                </motion.div>
+
+                {/* Submit */}
+                <motion.div variants={fadeSlideUp} className="flex items-center justify-between">
+                  <button
+                    suppressHydrationWarning
+                    type="submit"
+                    disabled={isLoading || !email.trim() || !password.trim() || !dept || !selectedRole}
+                    className="flex items-center gap-3 px-8 py-4 bg-slate-900 text-white font-medium text-sm hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded"
+                  >
+                    {isLoading
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating</>
+                      : <>Sign In as {selectedRole ? ROLE_META[selectedRole]?.label : "User"} <ArrowRight className="w-4 h-4" /></>}
+                  </button>
                 </motion.div>
 
                 {/* Wrong credentials banner */}
@@ -539,13 +553,13 @@ export default function LoginPage() {
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="flex items-start gap-3 text-sm font-mono mb-6 p-4 bg-red-50 border border-red-300"
+                      className="flex items-start gap-3 text-sm font-mono mb-6 p-4 bg-red-50 border border-red-300 rounded"
                     >
-                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-red-700 font-medium">Incorrect Employee ID or password.</p>
+                        <p className="text-red-800 font-medium">Incorrect Employee ID or password.</p>
                         {remaining > 0 && remaining < MAX_ATTEMPTS && (
-                          <p className="text-gray-700 text-xs mt-1">
+                          <p className="text-slate-700 text-xs mt-1">
                             Failed attempts: {attempts}/{MAX_ATTEMPTS}. {remaining} attempt{remaining !== 1 ? "s" : ""} remaining before lockout.
                           </p>
                         )}
@@ -553,26 +567,12 @@ export default function LoginPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-
-                {/* Submit */}
-                <motion.div variants={fadeSlideUp} className="flex items-center justify-between">
-                  <button
-                    suppressHydrationWarning
-                    type="submit"
-                    disabled={isLoading || !email.trim() || !password.trim() || !dept || !selectedRole}
-                    className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating</>
-                      : <>Sign In as {selectedRole ? ROLE_META[selectedRole]?.label : "User"} <ArrowRight className="w-4 h-4" /></>}
-                  </button>
-                </motion.div>
               </motion.form>
             )}
 
-            <motion.p variants={fadeSlideUp} className="mt-12 text-gray-600 text-sm font-light">
-              New to Nexus Engine?{" "}
-              <Link href="/register" className="text-blue-600 hover:text-blue-800 transition-colors underline-offset-4 hover:underline">Request access →</Link>
+            <motion.p variants={fadeSlideUp} className="mt-12 text-slate-600 text-sm font-light">
+              New to the platform?{" "}
+              <Link href="/register" className="text-amber-700 hover:text-amber-800 transition-colors underline-offset-4 hover:underline">Request access →</Link>
             </motion.p>
           </motion.div>
         </div>
