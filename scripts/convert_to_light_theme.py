@@ -68,7 +68,10 @@ def convert_file(file_path):
 
 def main():
     """Main conversion function"""
-    frontend_path = Path('/vercel/share/v0-project/frontend/frontend/src')
+    import os
+    # Get the script's directory and navigate to frontend
+    script_dir = Path(__file__).parent.parent
+    frontend_path = script_dir / 'frontend' / 'frontend' / 'src'
     
     if not frontend_path.exists():
         print(f"Frontend path not found: {frontend_path}")
