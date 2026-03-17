@@ -1,14 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --color-cosmic: #0F172A;
-  --color-brand: #1D4ED8;
+  /* Light Theme Color Palette */
+  --color-background: #FFFFFF;
+  --color-surface: #F9FAFB;
+  --color-surface-secondary: #F3F4F6;
+  --color-border: #E5E7EB;
+  --color-border-light: #F0F1F3;
+  --color-text-primary: #1F2937;
+  --color-text-secondary: #6B7280;
+  --color-text-tertiary: #9CA3AF;
+  
+  /* Brand & Accent Colors */
+  --color-brand: #2563EB;
+  --color-brand-hover: #1D4ED8;
+  --color-brand-light: #DBEAFE;
   --color-aurora: #06B6D4;
-  --color-insight: #7C3AED;
-  --color-attain: #059669;
-  --color-alert: #D97706;
-  --color-surface: #F8FAFC;
-  --color-glass: rgba(255, 255, 255, 0.85);
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+  
+  /* Additional Semantic Colors */
+  --color-accent: #7C3AED;
+  --color-secondary: #8B5CF6;
   
   --font-display: var(--font-bricolage);
   --font-sans: var(--font-jakarta);
@@ -17,8 +32,9 @@
 
 @layer base {
   body {
-    background-color: var(--color-cosmic); /* Changed to cosmic by default for a stellar feel */
-    color: var(--color-surface);
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
   }
   
   ::selection {
@@ -32,24 +48,87 @@
     font-family: var(--font-display); 
     font-weight: 800;
     line-height: 1.1;
+    color: var(--color-text-primary);
   }
   h2, .text-h1 { 
     font-size: clamp(2rem, 3.5vw, 3rem); 
     font-family: var(--font-display); 
     font-weight: 700;
     line-height: 1.2;
+    color: var(--color-text-primary);
   }
   h3, .text-h2 { 
     font-size: clamp(1.5rem, 2.5vw, 2.25rem); 
     font-family: var(--font-sans); 
-    font-weight: 600; 
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+  h4, .text-h3 {
+    font-size: clamp(1.125rem, 2vw, 1.5rem);
+    font-family: var(--font-sans);
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+  h5, .text-h4 {
+    font-size: clamp(1rem, 1.5vw, 1.25rem);
+    font-family: var(--font-sans);
+    font-weight: 600;
+    color: var(--color-text-primary);
   }
   p, .text-body { 
     font-size: clamp(0.9rem, 1.2vw, 1.05rem); 
     line-height: 1.6;
+    color: var(--color-text-primary);
+  }
+  .text-secondary {
+    color: var(--color-text-secondary);
   }
   .text-caption { 
     font-size: 0.8rem; 
-    color: rgba(248, 250, 252, 0.7); /* Surface pearl semi-transparent */
+    color: var(--color-text-tertiary);
+  }
+  
+  /* Links */
+  a {
+    color: var(--color-brand);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  a:hover {
+    color: var(--color-brand-hover);
+    text-decoration: underline;
+  }
+  
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Utility Classes for Light Theme */
+@layer utilities {
+  .bg-primary {
+    @apply bg-white;
+  }
+  .bg-secondary {
+    @apply bg-gray-50;
+  }
+  .bg-tertiary {
+    @apply bg-gray-100;
+  }
+  .text-primary {
+    @apply text-gray-900;
+  }
+  .text-muted {
+    @apply text-gray-600;
+  }
+  .border-light {
+    @apply border-gray-200;
+  }
+  .shadow-soft {
+    @apply shadow-sm;
+  }
+  .shadow-medium {
+    @apply shadow-md;
   }
 }

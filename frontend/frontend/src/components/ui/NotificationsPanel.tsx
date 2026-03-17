@@ -14,11 +14,11 @@ const TYPE_ICON: Record<NotifType, any> = {
   system: Info,
 };
 const TYPE_COLOR: Record<NotifType, string> = {
-  co_alert: "text-alert",
-  marks: "text-attain",
-  approval: "text-aurora",
-  deadline: "text-brand",
-  system: "text-white/40",
+  co_alert: "text-red-600",
+  marks: "text-green-600",
+  approval: "text-cyan-600",
+  deadline: "text-blue-600",
+  system: "text-gray-500",
 };
 const TYPE_LABELS: Record<NotifType, string> = {
   co_alert: "CO Alerts",
@@ -65,7 +65,7 @@ export function NotificationsPanel() {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={closeNotif}
-            className="fixed inset-0 z-[90] bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[90] bg-black/30 backdrop-blur-sm"
             aria-hidden="true"
           />
           <motion.div
@@ -74,24 +74,24 @@ export function NotificationsPanel() {
             aria-modal="true"
             initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="fixed right-0 top-0 h-full w-full max-w-sm bg-[#0D1829] border-l border-white/10 z-[100] flex flex-col"
+            className="fixed right-0 top-0 h-full w-full max-w-sm bg-white border-l border-gray-200 z-[100] flex flex-col shadow-lg"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <Bell className="w-5 h-5 text-white/60" aria-hidden="true" />
-                <h2 className="text-white font-display text-lg">Notifications</h2>
+                <Bell className="w-5 h-5 text-gray-600" aria-hidden="true" />
+                <h2 className="text-gray-900 font-display text-lg">Notifications</h2>
                 {unread > 0 && (
-                  <span className="w-5 h-5 rounded-full bg-brand flex items-center justify-center text-[10px] text-white font-mono" aria-label={`${unread} unread`}>{unread}</span>
+                  <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center text-[10px] text-white font-mono" aria-label={`${unread} unread`}>{unread}</span>
                 )}
               </div>
               <div className="flex items-center gap-3">
                 {unread > 0 && (
-                  <button onClick={markAllRead} className="text-xs font-mono text-white/40 hover:text-white transition-colors uppercase tracking-widest">
+                  <button onClick={markAllRead} className="text-xs font-mono text-gray-500 hover:text-gray-900 transition-colors uppercase tracking-widest">
                     Mark all read
                   </button>
                 )}
-                <button onClick={closeNotif} aria-label="Close notifications" className="text-white/30 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand rounded">
+                <button onClick={closeNotif} aria-label="Close notifications" className="text-gray-400 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
                   <X className="w-5 h-5" />
                 </button>
               </div>

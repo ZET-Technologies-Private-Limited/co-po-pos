@@ -28,9 +28,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" style={{ scrollBehavior: "smooth" }}>
+    <html lang="en">
       <body
-        className={`${bricolage.variable} ${jakarta.variable} ${jetbrains.variable} font-sans antialiased text-surface bg-cosmic min-h-screen`}
+        className={`${bricolage.variable} ${jakarta.variable} ${jetbrains.variable} font-sans antialiased text-gray-900 bg-white min-h-screen`}
       >
         {children}
       </body>

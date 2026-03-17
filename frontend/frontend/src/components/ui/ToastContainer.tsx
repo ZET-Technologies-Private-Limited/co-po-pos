@@ -5,10 +5,10 @@ import { useUIStore } from "@/lib/uiStore";
 import { CheckCircle2, AlertTriangle, Info, X, AlertCircle } from "lucide-react";
 
 const ICONS = {
-  success: <CheckCircle2 className="w-4 h-4 text-attain shrink-0" />,
-  error: <AlertCircle className="w-4 h-4 text-alert shrink-0" />,
-  info: <Info className="w-4 h-4 text-brand shrink-0" />,
-  warning: <AlertTriangle className="w-4 h-4 text-aurora shrink-0" />,
+  success: <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />,
+  error: <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />,
+  info: <Info className="w-4 h-4 text-blue-600 shrink-0" />,
+  warning: <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0" />,
 };
 
 export function ToastContainer() {
@@ -25,22 +25,22 @@ export function ToastContainer() {
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ type: "spring", stiffness: 400, damping: 28 }}
             role={toast.type === "error" ? "alert" : "status"}
-            className={`flex items-start gap-3 px-5 py-3 bg-[#1E293B] shadow-2xl pointer-events-auto ${
+            className={`flex items-start gap-3 px-5 py-3 bg-white shadow-lg pointer-events-auto rounded-lg ${
               toast.type === "error"
-                ? "border border-alert/30"
+                ? "border border-red-200"
                 : toast.type === "success"
-                  ? "border border-attain/20"
+                  ? "border border-green-200"
                   : toast.type === "warning"
-                    ? "border border-aurora/30"
-                    : "border border-white/10"
+                    ? "border border-yellow-200"
+                    : "border border-gray-200"
             }`}
           >
             {ICONS[toast.type]}
             <div className="flex-1">
-              <span className="text-white/80 text-sm font-light block">{toast.message}</span>
-              {toast.type === "error" && <span className="mt-1 block text-[10px] font-mono uppercase tracking-widest text-alert/70">Dismiss manually</span>}
+              <span className="text-gray-800 text-sm font-light block">{toast.message}</span>
+              {toast.type === "error" && <span className="mt-1 block text-[10px] font-mono uppercase tracking-widest text-red-600">Dismiss manually</span>}
             </div>
-            <button onClick={() => removeToast(toast.id)} className="text-white/30 hover:text-white transition-colors ml-2 shrink-0">
+            <button onClick={() => removeToast(toast.id)} className="text-gray-400 hover:text-gray-900 transition-colors ml-2 shrink-0">
               <X className="w-3 h-3" />
             </button>
           </motion.div>

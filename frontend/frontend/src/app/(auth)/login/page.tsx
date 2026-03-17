@@ -42,11 +42,11 @@ function validatePassword(val: string) {
 }
 
 const ROLE_META: Record<string, { label: string; desc: string; color: string }> = {
-  faculty:         { label: "Faculty",          desc: "Manage courses, upload marks, generate COs",          color: "text-brand border-brand/30 hover:bg-brand/5" },
-  subject_lead:    { label: "Course Lead",       desc: "Approve marks, track CO/PO attainment across courses", color: "text-insight border-insight/30 hover:bg-insight/5" },
-  department_head: { label: "Head of Department",desc: "Full department view, reports, year-end sign-off",    color: "text-aurora border-aurora/30 hover:bg-aurora/5" },
-  admin:           { label: "System Admin",      desc: "User management, AY config, full system access",      color: "text-alert border-alert/30 hover:bg-alert/5" },
-  student:         { label: "Student",           desc: "View enrolled courses, marks, and CO attainment",     color: "text-cyan-400 border-cyan-400/30 hover:bg-cyan-400/5" },
+  faculty:         { label: "Faculty",          desc: "Manage courses, upload marks, generate COs",          color: "text-blue-600 border-blue-200 hover:bg-blue-50" },
+  subject_lead:    { label: "Course Lead",       desc: "Approve marks, track CO/PO attainment across courses", color: "text-purple-600 border-purple-200 hover:bg-purple-50" },
+  department_head: { label: "Head of Department",desc: "Full department view, reports, year-end sign-off",    color: "text-cyan-600 border-cyan-200 hover:bg-cyan-50" },
+  admin:           { label: "System Admin",      desc: "User management, AY config, full system access",      color: "text-orange-600 border-orange-200 hover:bg-orange-50" },
+  student:         { label: "Student",           desc: "View enrolled courses, marks, and CO attainment",     color: "text-green-600 border-green-200 hover:bg-green-50" },
 };
 
 export default function LoginPage() {
@@ -207,30 +207,30 @@ export default function LoginPage() {
   // ── DUAL-ROLE FULL-PAGE SELECTOR ──────────────────────────────────────────
   if (showRoleSelect) {
     return (
-      <div className="min-h-screen bg-cosmic flex items-center justify-center px-4">
+      <div className="min-h-screen bg-white flex items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-lg"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand to-aurora flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center">
               <span className="text-white text-xs font-bold">N</span>
             </div>
-            <span className="font-display font-medium text-white tracking-widest uppercase text-sm">Nexus Engine</span>
+            <span className="font-display font-medium text-gray-900 tracking-widest uppercase text-sm">Nexus Engine</span>
           </div>
 
-          <div className="mt-12 mb-4 flex items-center gap-3 text-xs font-mono text-white/30 uppercase tracking-widest">
-            <span className="w-8 h-[1px] bg-white/20" /> Dual-Role Account
+          <div className="mt-12 mb-4 flex items-center gap-3 text-xs font-mono text-gray-400 uppercase tracking-widest">
+            <span className="w-8 h-[1px] bg-gray-300" /> Dual-Role Account
           </div>
-          <h1 className="text-4xl font-display text-white mb-3">Select your dashboard</h1>
-          <p className="text-white/40 font-light mb-12">
+          <h1 className="text-4xl font-display text-gray-900 mb-3">Select your dashboard</h1>
+          <p className="text-gray-600 font-light mb-12">
             Your account has multiple roles. Choose which dashboard to open for this session.
           </p>
 
           <div className="flex flex-col gap-4">
             {pendingRoles.map(role => {
-              const m = ROLE_META[role] ?? { label: role, desc: "", color: "text-white border-white/20 hover:bg-white/5" };
+              const m = ROLE_META[role] ?? { label: role, desc: "", color: "text-gray-900 border-gray-300 hover:bg-gray-50" };
               return (
                 <button
                   key={role}
@@ -240,9 +240,9 @@ export default function LoginPage() {
                 >
                   <div className="text-left">
                     <p className="font-mono text-sm uppercase tracking-widest mb-1">{m.label}</p>
-                    <p className="text-xs text-white/40 font-light">{m.desc}</p>
+                    <p className="text-xs text-gray-500 font-light">{m.desc}</p>
                   </div>
-                  <ArrowRight className="w-5 h-5 opacity-40 shrink-0" />
+                  <ArrowRight className="w-5 h-5 opacity-60 shrink-0" />
                 </button>
               );
             })}
@@ -251,7 +251,7 @@ export default function LoginPage() {
           <button
             suppressHydrationWarning
             onClick={() => { setShowRoleSelect(false); useAuthStore.getState().logout(); }}
-            className="mt-8 text-sm text-white/30 hover:text-white transition-colors font-mono"
+            className="mt-8 text-sm text-gray-500 hover:text-gray-900 transition-colors font-mono"
           >
             ← Sign out and go back
           </button>
@@ -261,7 +261,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-cosmic overflow-hidden selection:bg-brand/30 selection:text-white">
+    <div className="relative min-h-screen bg-white overflow-hidden selection:bg-blue-100 selection:text-gray-900">
       <LoginBackground />
 
       {/* ── SESSION ALREADY ACTIVE WARNING ── */}
@@ -271,33 +271,33 @@ export default function LoginPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8"
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-8"
           >
             <motion.div
               initial={{ scale: 0.95, y: 16 }}
               animate={{ scale: 1, y: 0 }}
-              className="w-full max-w-md bg-[#0D1829] border border-white/10 p-10"
+              className="w-full max-w-md bg-white border border-gray-200 p-10 rounded-lg shadow-lg"
             >
               <div className="flex items-center gap-3 mb-6">
-                <MonitorSmartphone className="w-5 h-5 text-amber-400" />
-                <p className="text-xs font-mono text-amber-400 uppercase tracking-widest">Active Session Detected</p>
+                <MonitorSmartphone className="w-5 h-5 text-amber-500" />
+                <p className="text-xs font-mono text-amber-600 uppercase tracking-widest">Active Session Detected</p>
               </div>
-              <p className="text-white text-lg font-display mb-3">You are already signed in</p>
-              <p className="text-white/50 text-sm font-light leading-relaxed mb-8">
+              <p className="text-gray-900 text-lg font-display mb-3">You are already signed in</p>
+              <p className="text-gray-600 text-sm font-light leading-relaxed mb-8">
                 An active session exists on this device. Continuing will reopen your saved role and academic-year context on this browser.
               </p>
               <div className="flex flex-col gap-3">
                 <button
                   suppressHydrationWarning
                   onClick={continueExistingSession}
-                  className="flex items-center justify-between px-6 py-4 bg-white text-black text-sm font-medium hover:bg-white/90 transition-colors"
+                  className="flex items-center justify-between px-6 py-4 bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors rounded"
                 >
                   Continue to Dashboard <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
                   suppressHydrationWarning
                   onClick={() => { useAuthStore.getState().logout(); setShowSessionWarning(false); }}
-                  className="px-6 py-4 border border-white/10 text-white/50 text-sm font-mono hover:border-white/30 hover:text-white transition-colors"
+                  className="px-6 py-4 border border-gray-300 text-gray-600 text-sm font-mono hover:border-gray-400 hover:text-gray-900 transition-colors rounded"
                 >
                   Sign out and log in as different user
                 </button>

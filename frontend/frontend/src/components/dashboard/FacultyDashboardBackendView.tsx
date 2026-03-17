@@ -216,7 +216,7 @@ export function FacultyDashboardBackendView() {
 
   if (!activeRole || !["faculty", "course_lead", "subject_lead"].includes(activeRole)) {
     return (
-      <div className="py-16 text-center text-white/40 text-sm font-mono">
+      <div className="py-16 text-center text-gray-500 text-sm font-mono">
         Faculty dashboard is not available for your current role.
       </div>
     );
@@ -232,21 +232,21 @@ export function FacultyDashboardBackendView() {
       {/* Header */}
       <motion.section
         variants={fadeSlideUp}
-        className="pb-10 border-b border-white/5"
+        className="pb-10 border-b border-gray-300"
       >
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
           <div>
-            <p className="text-3xl font-display text-white mb-1">
+            <p className="text-3xl font-display text-gray-900 mb-1">
               {data?.header.welcome_line || "Welcome, Faculty"}
             </p>
-            <p className="text-sm text-white/30 font-mono mb-5">
+            <p className="text-sm text-gray-600 font-mono mb-5">
               {data?.header.today_full_date}
             </p>
 
-            <p className="text-sm text-white/50 font-mono mb-3">
+            <p className="text-sm text-gray-700 font-mono mb-3">
               {data?.header.status_summary_line}
             </p>
-            <p className="text-xs font-mono text-white/25">
+            <p className="text-xs font-mono text-gray-500">
               {data?.header.ay_context_line}
             </p>
           </div>
@@ -254,13 +254,13 @@ export function FacultyDashboardBackendView() {
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/faculty/course/new"
-              className="inline-flex items-center gap-2 px-4 py-2 border border-brand/40 text-brand hover:text-white hover:border-white/40 transition-colors text-xs font-mono uppercase tracking-widest"
+              className="inline-flex items-center gap-2 px-4 py-2 border border-blue-300 text-blue-700 hover:bg-blue-50 hover:border-blue-400 transition-colors text-xs font-mono uppercase tracking-widest font-medium"
             >
               <PlusCircle className="w-3.5 h-3.5" /> Create Course
             </Link>
             <Link
               href="/reports"
-              className="inline-flex items-center gap-2 px-4 py-2 border border-white/20 text-white/60 hover:text-white hover:border-white/40 transition-colors text-xs font-mono uppercase tracking-widest"
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors text-xs font-mono uppercase tracking-widest"
             >
               <BarChart2 className="w-3.5 h-3.5" /> View Reports
             </Link>
@@ -268,33 +268,33 @@ export function FacultyDashboardBackendView() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-7">
-          <div className="border border-white/10 bg-white/[0.02] px-4 py-3">
-            <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-2">Total Courses</p>
-            <p className="text-xl font-display text-white">{dashboardStats.totalCourses}</p>
+          <div className="border border-gray-300 bg-white px-4 py-3">
+            <p className="text-[10px] font-mono text-gray-600 uppercase tracking-widest mb-2 font-medium">Total Courses</p>
+            <p className="text-xl font-display text-gray-900">{dashboardStats.totalCourses}</p>
           </div>
-          <div className="border border-white/10 bg-white/[0.02] px-4 py-3">
-            <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-2">Pending Tasks</p>
-            <p className="text-xl font-display text-alert">{dashboardStats.pendingActions}</p>
+          <div className="border border-gray-300 bg-white px-4 py-3">
+            <p className="text-[10px] font-mono text-gray-600 uppercase tracking-widest mb-2 font-medium">Pending Tasks</p>
+            <p className="text-xl font-display text-red-600">{dashboardStats.pendingActions}</p>
           </div>
-          <div className="border border-white/10 bg-white/[0.02] px-4 py-3">
-            <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-2">CO Ready Courses</p>
-            <p className="text-xl font-display text-attain">{dashboardStats.coursesWithGeneratedCOs}</p>
+          <div className="border border-gray-300 bg-white px-4 py-3">
+            <p className="text-[10px] font-mono text-gray-600 uppercase tracking-widest mb-2 font-medium">CO Ready Courses</p>
+            <p className="text-xl font-display text-green-600">{dashboardStats.coursesWithGeneratedCOs}</p>
           </div>
-          <div className="border border-white/10 bg-white/[0.02] px-4 py-3">
-            <p className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-2">Need Attention</p>
-            <p className="text-xl font-display text-amber-400">{dashboardStats.coursesNeedingAttention}</p>
+          <div className="border border-gray-300 bg-white px-4 py-3">
+            <p className="text-[10px] font-mono text-gray-600 uppercase tracking-widest mb-2 font-medium">Need Attention</p>
+            <p className="text-xl font-display text-amber-600">{dashboardStats.coursesNeedingAttention}</p>
           </div>
         </div>
       </motion.section>
 
       {/* Error / loading */}
       {error && (
-        <div className="py-6 text-center text-red-400 text-sm font-mono border-b border-white/10">
+        <div className="py-6 text-center text-red-700 text-sm font-mono border-b border-gray-300 bg-red-50">
           {error}
         </div>
       )}
       {loading && (
-        <div className="py-6 text-center text-white/30 text-sm font-mono border-b border-white/10">
+        <div className="py-6 text-center text-gray-600 text-sm font-mono border-b border-gray-300">
           Loading dashboard…
         </div>
       )}
@@ -302,45 +302,45 @@ export function FacultyDashboardBackendView() {
       {/* Courses table */}
       <motion.section
         variants={fadeSlideUp}
-        className="py-8 border-b border-white/5"
+        className="py-8 border-b border-gray-300"
       >
         <div className="flex flex-col gap-3 mb-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-6">
-              <h2 className="text-[10px] font-mono text-white/30 uppercase tracking-widest">
+              <h2 className="text-[10px] font-mono text-gray-700 uppercase tracking-widest font-medium">
                 Courses Summary
               </h2>
               <Link
                 href="/faculty/course/new"
-                className="flex items-center gap-1.5 text-xs font-mono text-brand hover:text-white transition-colors uppercase tracking-widest"
+                className="flex items-center gap-1.5 text-xs font-mono text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-widest font-medium"
               >
                 <PlusCircle className="w-3 h-3" /> New Course
               </Link>
             </div>
-            <div className="flex items-center gap-2 border-b border-white/10 pb-1">
-              <Search className="w-3.5 h-3.5 text-white/30" />
+            <div className="flex items-center gap-2 border-b border-gray-300 pb-1">
+              <Search className="w-3.5 h-3.5 text-gray-500" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by code or name..."
-                className="bg-transparent text-white text-sm placeholder-white/20 outline-none w-48"
+                className="bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none w-48"
               />
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono uppercase tracking-widest">
-            <p className="text-white/25">Click a course row to expand its workflow and exam status.</p>
-            <p className="text-white/35">
+            <p className="text-gray-600">Click a course row to expand its workflow and exam status.</p>
+            <p className="text-gray-500">
               {dashboardStats.totalCourses} course{dashboardStats.totalCourses === 1 ? "" : "s"} in view
             </p>
           </div>
         </div>
 
-        <div className="border border-white/10 bg-white/[0.015]">
+        <div className="border border-gray-300 bg-gray-50">
           <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
+              <tr className="border-b border-gray-300 bg-gray-100">
                 <th className={thCol} onClick={() => handleSort("course_code")}>
                   <span className="flex items-center gap-1">
                     Code <SortIcon col="course_code" />

@@ -39,31 +39,31 @@ export default function StudentDashboardPage() {
   return (
     <AccessGate feature="dashboard" deny="lock">
       <div className="max-w-6xl mx-auto pb-24 space-y-6">
-        <div className="border-b border-white/10 pb-4">
-          <h1 className="text-3xl text-white font-display">Student Dashboard</h1>
-          <p className="text-white/50 mt-1">{user?.name || "Student"} | AY {academicYear?.code || academicYear?.ay || "-"}</p>
+        <div className="border-b border-gray-200 pb-4">
+          <h1 className="text-3xl text-gray-900 font-display">Student Dashboard</h1>
+          <p className="text-gray-600 mt-1">{user?.name || "Student"} | AY {academicYear?.code || academicYear?.ay || "-"}</p>
         </div>
 
-        {loading ? <p className="text-white/60">Loading...</p> : null}
-        {error ? <p className="text-alert">{error}</p> : null}
+        {loading ? <p className="text-gray-500">Loading...</p> : null}
+        {error ? <p className="text-red-600">{error}</p> : null}
 
         {!loading && !error ? (
-          <section className="border border-white/10 rounded-lg p-4">
-            <h2 className="text-sm text-white mb-3">Enrolled / Available Courses</h2>
+          <section className="border border-gray-300 rounded-lg p-4 bg-white">
+            <h2 className="text-sm text-gray-900 font-medium mb-3">Enrolled / Available Courses</h2>
             <div className="space-y-2">
               {courses.map((c) => (
-                <div key={c.id} className="border border-white/10 rounded p-3 flex items-center justify-between gap-3">
+                <div key={c.id} className="border border-gray-200 rounded p-3 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
                   <div>
-                    <p className="text-white text-sm">{c.course_name}</p>
-                    <p className="text-white/50 text-xs mt-1">{c.course_code} | Sem {c.semester}</p>
+                    <p className="text-gray-900 text-sm font-medium">{c.course_name}</p>
+                    <p className="text-gray-600 text-xs mt-1">{c.course_code} | Sem {c.semester}</p>
                   </div>
                   <div className="flex items-center gap-3 text-xs">
-                    <Link href={`/student/course/${c.id}/marks`} className="text-brand hover:text-white">Marks</Link>
-                    <Link href={`/student/course/${c.id}/co-attainment`} className="text-brand hover:text-white">CO Attainment</Link>
+                    <Link href={`/student/course/${c.id}/marks`} className="text-blue-600 hover:text-blue-800 font-medium">Marks</Link>
+                    <Link href={`/student/course/${c.id}/co-attainment`} className="text-blue-600 hover:text-blue-800 font-medium">CO Attainment</Link>
                   </div>
                 </div>
               ))}
-              {courses.length === 0 ? <p className="text-white/40 text-sm">No courses available.</p> : null}
+              {courses.length === 0 ? <p className="text-gray-500 text-sm">No courses available.</p> : null}
             </div>
           </section>
         ) : null}

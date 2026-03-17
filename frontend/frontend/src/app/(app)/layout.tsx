@@ -201,7 +201,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Standalone pages bypass the entire shell
   if (STANDALONE_PATHS.some((p) => pathname === p || pathname.startsWith(p + "?")))
     return (
-      <div className={`min-h-screen bg-cosmic text-white ${darkMode ? "" : "brightness-110"}`}>
+      <div className={`min-h-screen bg-white text-gray-900`}>
         <ToastContainer />
         <SessionTimeoutModal />
         {children}
@@ -209,7 +209,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
 
   return (
-    <div className={`min-h-screen bg-cosmic text-white flex flex-col ${darkMode ? "" : "brightness-110"}`}>
+    <div className={`min-h-screen bg-white text-gray-900 flex flex-col`}>
       <GlobalKeyBindings />
       <AIOrb />
       <DemoPanel />
@@ -221,7 +221,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* ── TOP NAVIGATION ── */}
       <header
         role="banner"
-        className="sticky top-0 z-40 bg-cosmic/95 backdrop-blur-xl border-b border-white/5 h-16 flex items-center px-4 md:px-8 justify-between print:hidden"
+        className="sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-gray-200 h-16 flex items-center px-4 md:px-8 justify-between print:hidden"
       >
         {/* Logo + Portal name */}
         <div className="flex items-center gap-3">
@@ -231,41 +231,41 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
             aria-expanded={mobileOpen}
             aria-controls="mobile-nav"
-            className="md:hidden p-2 text-white/40 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand rounded"
+            className="md:hidden p-2 text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
           <Link href="/dashboard" aria-label="Nexus Engine — Home" className="font-display font-bold text-xl tracking-wide flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand to-aurora flex items-center justify-center" aria-hidden="true">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center" aria-hidden="true">
               <span className="text-white text-xs font-bold">N</span>
             </div>
-            <span className="hidden sm:inline">Nexus<span className="text-white/40">Engine</span></span>
+            <span className="hidden sm:inline text-gray-900">Nexus<span className="text-gray-400">Engine</span></span>
           </Link>
 
           {/* AY Selector */}
           <div className="relative ml-2">
             <label htmlFor="ay-select" className="sr-only">Academic Year</label>
-            <div className="flex items-center gap-1 px-3 py-1.5 border border-white/10 hover:border-white/30 transition-colors cursor-pointer rounded">
+            <div className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 hover:border-gray-400 transition-colors cursor-pointer rounded">
               <select
                 id="ay-select"
                 value={activeAY}
                 onChange={e => handleAYChange(e.target.value)}
                 aria-label="Select Academic Year"
-                className="bg-transparent text-white/70 text-xs font-mono outline-none cursor-pointer appearance-none pr-4"
+                className="bg-transparent text-gray-700 text-xs font-mono outline-none cursor-pointer appearance-none pr-4"
               >
                 {AY_OPTIONS.map((ay, i) => (
-                  <option key={ay} value={ay} className="bg-[#0D1829]">
+                  <option key={ay} value={ay} className="bg-white text-gray-900">
                     {i === 0 ? `AY ${ay} (Current)` : `AY ${ay}`}
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-3 h-3 text-white/30 pointer-events-none absolute right-2" aria-hidden="true" />
+              <ChevronDown className="w-3 h-3 text-gray-400 pointer-events-none absolute right-2" aria-hidden="true" />
             </div>
           </div>
           {/* Read-only badge for past AYs */}
           {isReadOnlyAY && (
-            <span className="hidden sm:flex items-center gap-1 px-2 py-1 bg-alert/10 border border-alert/30 text-alert text-[9px] font-mono uppercase tracking-widest rounded" aria-live="polite">
+            <span className="hidden sm:flex items-center gap-1 px-2 py-1 bg-yellow-50 border border-yellow-200 text-yellow-700 text-[9px] font-mono uppercase tracking-widest rounded" aria-live="polite">
               <Lock className="w-2.5 h-2.5" aria-hidden="true" /> Read-only
             </span>
           )}
@@ -279,7 +279,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 key="chat"
                 type="button"
                 onClick={openChat}
-                className="flex items-center gap-1 px-2 py-5 transition-colors border-b-2 uppercase tracking-wider whitespace-nowrap shrink text-white/50 hover:text-white border-transparent hover:border-white/30 focus:outline-none focus:ring-2 focus:ring-brand rounded-none"
+                className="flex items-center gap-1 px-2 py-5 transition-colors border-b-2 uppercase tracking-wider whitespace-nowrap shrink text-gray-600 hover:text-gray-900 border-transparent hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-none"
               >
                 <item.icon className="w-3 h-3 shrink-0 hidden lg:block" aria-hidden="true" />
                 {item.label}
@@ -291,8 +291,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 aria-current={pathname === item.href ? "page" : undefined}
                 className={`flex items-center gap-1 px-2 py-5 transition-colors border-b-2 uppercase tracking-wider whitespace-nowrap shrink ${
                   pathname === item.href
-                    ? "text-white border-brand"
-                    : "text-white/50 hover:text-white border-transparent hover:border-white/30"
+                    ? "text-blue-600 border-blue-600"
+                    : "text-gray-600 hover:text-gray-900 border-transparent hover:border-gray-300"
                 }`}
               >
                 <item.icon className="w-3 h-3 shrink-0 hidden lg:block" aria-hidden="true" />
@@ -308,16 +308,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={openSearch}
             aria-label="Open search (/ or Cmd+K)"
-            className="hidden sm:flex items-center gap-2 px-3 py-1.5 border border-white/10 text-white/30 hover:text-white hover:border-white/30 transition-colors font-mono text-xs focus:outline-none focus:ring-2 focus:ring-brand rounded"
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 border border-gray-300 text-gray-600 hover:text-gray-900 hover:border-gray-400 transition-colors font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
             <Search className="w-3 h-3" aria-hidden="true" />
             <span>Search</span>
-            <kbd className="text-[9px] border border-white/10 px-1.5 py-0.5" aria-label="Keyboard shortcut: slash">/</kbd>
+            <kbd className="text-[9px] border border-gray-300 px-1.5 py-0.5" aria-label="Keyboard shortcut: slash">/</kbd>
           </button>
           <button
             onClick={openSearch}
             aria-label="Open search"
-            className="sm:hidden p-2 text-white/40 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand rounded"
+            className="sm:hidden p-2 text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
             <Search className="w-5 h-5" aria-hidden="true" />
           </button>
@@ -326,13 +326,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={openNotif}
             aria-label={`Notifications${unread > 0 ? `, ${unread} unread` : ""}`}
-            className="relative p-2 text-white/40 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-brand rounded"
+            className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
             <Bell className="w-5 h-5" aria-hidden="true" />
             {unread > 0 && (
               <span
                 aria-hidden="true"
-                className="absolute top-1 right-1 min-w-[16px] h-4 rounded-full bg-brand flex items-center justify-center text-[9px] text-white font-mono px-1"
+                className="absolute top-1 right-1 min-w-[16px] h-4 rounded-full bg-red-500 flex items-center justify-center text-[9px] text-white font-mono px-1"
               >
                 {unread > 9 ? "9+" : unread}
               </span>
@@ -346,14 +346,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               aria-label="Open profile menu"
               aria-haspopup="menu"
               aria-expanded={profileMenuOpen}
-              className="flex items-center gap-2 pl-2 pr-1 py-1 hover:bg-white/5 transition-colors rounded focus:outline-none focus:ring-2 focus:ring-brand"
+              className="flex items-center gap-2 pl-2 pr-1 py-1 hover:bg-gray-100 transition-colors rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <div className="hidden sm:flex flex-col text-right">
-                <span className="text-xs font-medium text-white leading-tight">{user?.name?.split(" ")[0] || "User"}</span>
-                <span className="text-[9px] font-mono uppercase tracking-widest text-brand leading-tight">{activeRole?.replace("_", " ")}</span>
+                <span className="text-xs font-medium text-gray-900 leading-tight">{user?.name?.split(" ")[0] || "User"}</span>
+                <span className="text-[9px] font-mono uppercase tracking-widest text-blue-600 leading-tight">{activeRole?.replace("_", " ")}</span>
               </div>
               <div
-                className="w-8 h-8 rounded bg-gradient-to-br from-brand/40 to-aurora/40 border border-white/10 flex items-center justify-center text-white text-sm font-display"
+                className="w-8 h-8 rounded bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-200 flex items-center justify-center text-gray-900 text-sm font-display"
                 aria-hidden="true"
               >
                 {user?.name?.[0] || "?"}
@@ -365,8 +365,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       {isReadOnlyAY && (
-        <div className="print:hidden border-b border-alert/15 bg-alert/5 px-4 py-2 md:px-8">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-alert/80">
+        <div className="print:hidden border-b border-yellow-200 bg-yellow-50 px-4 py-2 md:px-8">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-yellow-700">
             Read-only mode for AY {activeAY}. Switch to AY {AY_OPTIONS[0]} to edit records, upload marks, or submit approvals.
           </p>
         </div>
@@ -379,14 +379,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           <button
             aria-label="Close mobile navigation"
-            className="absolute inset-0 bg-black/55"
+            className="absolute inset-0 bg-black/25"
             onClick={() => setMobileOpen(false)}
           />
           <div
             id="mobile-nav"
             role="navigation"
             aria-label="Mobile navigation"
-            className="relative z-10 h-full w-[min(86vw,22rem)] border-r border-white/10 bg-cosmic/98 backdrop-blur-xl"
+            className="relative z-10 h-full w-[min(86vw,22rem)] border-r border-gray-200 bg-white/98 backdrop-blur-xl"
           >
             <nav className="flex h-full flex-col overflow-y-auto py-4">
               {navItems.map(item => (
@@ -395,7 +395,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     key="chat"
                     type="button"
                     onClick={() => { openChat(); setMobileOpen(false); }}
-                    className="flex items-center gap-3 px-6 py-4 text-sm font-mono uppercase tracking-widest transition-colors border-l-2 text-white/50 border-transparent hover:text-white hover:bg-white/5 text-left w-full"
+                    className="flex items-center gap-3 px-6 py-4 text-sm font-mono uppercase tracking-widest transition-colors border-l-2 text-gray-600 border-transparent hover:text-gray-900 hover:bg-gray-50 text-left w-full"
                   >
                     <item.icon className="w-4 h-4" aria-hidden="true" />
                     {item.label}
@@ -407,8 +407,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     aria-current={pathname === item.href ? "page" : undefined}
                     className={`flex items-center gap-3 px-6 py-4 text-sm font-mono uppercase tracking-widest transition-colors border-l-2 ${
                       pathname === item.href
-                        ? "text-white border-brand bg-white/5"
-                        : "text-white/50 border-transparent hover:text-white hover:bg-white/5"
+                        ? "text-blue-600 border-blue-600 bg-blue-50"
+                        : "text-gray-600 border-transparent hover:text-gray-900 hover:bg-gray-50"
                     }`}
                   >
                     <item.icon className="w-4 h-4" aria-hidden="true" />
@@ -433,7 +433,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         @media print {
           header, nav, .print\\:hidden { display: none !important; }
           main { padding: 0 !important; }
-          body { background: white !important; color: black !important; }
+          body { background: white !important; color: #1f2937 !important; }
         }
       `}</style>
     </div>
