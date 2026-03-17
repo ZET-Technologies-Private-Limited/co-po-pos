@@ -35,8 +35,8 @@ export function HealthDonutChart() {
               ))}
             </Pie>
             <Tooltip 
-              contentStyle={{ background: '#0F172A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
-              itemStyle={{ color: '#F8FAFC' }}
+              contentStyle={{ background: '#FFFFFF', border: '1px solid rgba(107,114,128,0.2)', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+              itemStyle={{ color: '#1F2937', fontWeight: 'bold' }}
             />
           </PieChart>
         </ResponsiveContainer>
@@ -47,19 +47,19 @@ export function HealthDonutChart() {
               value={78} 
               suffix="%" 
               duration={2} 
-              className="text-5xl justify-center font-display font-light text-white tracking-tighter" 
+              className="text-5xl justify-center font-display font-light text-gray-900 tracking-tighter" 
            />
-           <span className="text-sm text-white/50 font-mono mt-1">Overall</span>
+           <span className="text-sm text-gray-600 font-mono mt-1">Overall</span>
         </div>
       </div>
       
-      <div className="flex flex-col gap-4 mt-8 w-full pl-6 border-l border-white/10">
+      <div className="flex flex-col gap-4 mt-8 w-full pl-6 border-l border-gray-300">
         {data.map((item, i) => (
            <div key={i} className="flex items-center gap-4">
               <span className="w-2 h-2 rounded-full" style={{ background: item.color }} />
               <div className="flex flex-col">
-                <span className="text-white/80 font-medium text-lg leading-none">{item.value}%</span>
-                <span className="text-sm text-white/50 tracking-wide">{item.name}</span>
+                <span className="text-gray-900 font-medium text-lg leading-none">{item.value}%</span>
+                <span className="text-sm text-gray-600 tracking-wide">{item.name}</span>
               </div>
            </div>
         ))}

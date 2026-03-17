@@ -98,12 +98,12 @@ export function NotificationsPanel() {
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex gap-0 overflow-x-auto border-b border-white/10 scrollbar-none">
+            <div className="flex gap-0 overflow-x-auto border-b border-gray-300 scrollbar-none">
               {tabs.map(t => (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`shrink-0 px-4 py-3 text-[10px] font-mono uppercase tracking-widest transition-colors border-b-2 ${tab === t.key ? "border-brand text-white" : "border-transparent text-white/30 hover:text-white/60"}`}
+                  className={`shrink-0 px-4 py-3 text-[10px] font-mono uppercase tracking-widest transition-colors border-b-2 ${tab === t.key ? "border-blue-600 text-gray-900 font-medium" : "border-transparent text-gray-600 hover:text-gray-900"}`}
                 >
                   {t.label}
                 </button>
@@ -111,14 +111,14 @@ export function NotificationsPanel() {
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto divide-y divide-white/5">
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-200">
               {filtered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-4 py-16 px-8 text-center">
-                  <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
-                    <Bell className="w-7 h-7 text-white/20" />
+                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
+                    <Bell className="w-7 h-7 text-gray-400" />
                   </div>
-                  <p className="text-white/50 font-medium">You are all caught up!</p>
-                  <p className="text-white/25 text-sm font-light">No notifications in this category.</p>
+                  <p className="text-gray-600 font-medium">You are all caught up!</p>
+                  <p className="text-gray-500 text-sm font-light">No notifications in this category.</p>
                 </div>
               ) : (
                 filtered.map((n, i) => {
@@ -129,30 +129,30 @@ export function NotificationsPanel() {
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.03 }}
-                      className={`flex items-start gap-3 px-6 py-4 transition-colors ${!n.read ? "bg-white/[0.03]" : ""} hover:bg-white/[0.05]`}
+                      className={`flex items-start gap-3 px-6 py-4 transition-colors ${!n.read ? "bg-blue-50" : ""} hover:bg-gray-50`}
                     >
                       <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${TYPE_COLOR[n.type]}`} aria-hidden="true" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
-                          <p className={`font-medium text-sm leading-snug ${!n.read ? "text-white" : "text-white/50"}`}>{n.title}</p>
+                          <p className={`font-medium text-sm leading-snug ${!n.read ? "text-gray-900" : "text-gray-700"}`}>{n.title}</p>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {!n.read && (
                               <button
                                 onClick={() => markRead(n.id)}
                                 title="Mark as read"
-                                className="w-2 h-2 rounded-full bg-brand hover:bg-brand/60 transition-colors focus:outline-none focus:ring-1 focus:ring-brand"
+                                className="w-2 h-2 rounded-full bg-blue-600 hover:bg-blue-500 transition-colors focus:outline-none focus:ring-1 focus:ring-blue-600"
                                 aria-label="Mark as read"
                               />
                             )}
                           </div>
                         </div>
-                        <p className="text-white/40 text-xs font-light mt-0.5 leading-relaxed">{n.desc}</p>
+                        <p className="text-gray-600 text-xs font-light mt-0.5 leading-relaxed">{n.desc}</p>
                         <div className="flex items-center justify-between mt-2">
-                          <p className="text-white/25 text-[10px] font-mono">{n.time}</p>
+                          <p className="text-gray-500 text-[10px] font-mono">{n.time}</p>
                           {n.actionLabel && n.actionHref && (
                             <button
                               onClick={() => handleAction(n.actionHref!, n.id)}
-                              className="flex items-center gap-1 text-[10px] font-mono text-brand hover:text-aurora transition-colors uppercase tracking-widest focus:outline-none focus:underline"
+                              className="flex items-center gap-1 text-[10px] font-mono text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-widest focus:outline-none focus:underline"
                             >
                               {n.actionLabel} <ArrowRight className="w-3 h-3" />
                             </button>
@@ -166,11 +166,11 @@ export function NotificationsPanel() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
-              <p className="text-white/20 text-[10px] font-mono uppercase tracking-widest">Nexus Engine</p>
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+              <p className="text-gray-500 text-[10px] font-mono uppercase tracking-widest">Nexus Engine</p>
               <button
                 onClick={() => { closeNotif(); router.push("/profile"); }}
-                className="flex items-center gap-1.5 text-[10px] font-mono text-white/30 hover:text-white transition-colors uppercase tracking-widest"
+                className="flex items-center gap-1.5 text-[10px] font-mono text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-widest"
               >
                 <Settings className="w-3 h-3" /> Notification Settings
               </button>

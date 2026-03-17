@@ -13,10 +13,10 @@ export function AttainmentBarChart({ data, threshold }: AttainmentBarChartProps)
     <div className="w-full h-[350px] relative mt-4">
       {/* Target threshold label */}
       <div 
-        className="absolute w-max flex items-center gap-2 z-10 text-xs font-mono text-white/50 bg-cosmic/80 backdrop-blur-sm px-2 py-1 rounded-md border border-white/10"
+        className="absolute w-max flex items-center gap-2 z-10 text-xs font-mono text-gray-700 bg-amber-50/90 backdrop-blur-sm px-2 py-1 rounded-md border border-amber-300"
         style={{ top: `calc(${100 - threshold}% - 12px)`, right: 0 }}
       >
-         <span className="w-2 h-2 rounded-full bg-alert animate-pulse" />
+         <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
          Target: {threshold}%
       </div>
 
@@ -24,22 +24,22 @@ export function AttainmentBarChart({ data, threshold }: AttainmentBarChartProps)
         <BarChart data={data} margin={{ top: 20, right: 30, left: -20, bottom: 0 }}>
           <XAxis 
              dataKey="co" 
-             stroke="rgba(255,255,255,0.2)" 
-             tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12, fontFamily: 'monospace' }} 
+             stroke="rgba(107,114,128,0.3)" 
+             tick={{ fill: 'rgba(75,85,99,0.7)', fontSize: 12, fontFamily: 'monospace' }} 
              tickLine={false}
              axisLine={false}
           />
           <YAxis 
-             stroke="rgba(255,255,255,0.2)" 
-             tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+             stroke="rgba(107,114,128,0.3)" 
+             tick={{ fill: 'rgba(75,85,99,0.7)', fontSize: 12 }}
              tickLine={false}
              axisLine={false}
              domain={[0, 100]}
           />
           <Tooltip 
-             contentStyle={{ backgroundColor: '#0F172A', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px' }}
-             itemStyle={{ color: '#F8FAFC', fontWeight: 'bold' }}
-             cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+             contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#D1D5DB', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+             itemStyle={{ color: '#1F2937', fontWeight: 'bold' }}
+             cursor={{ fill: 'rgba(59,130,246,0.05)' }}
           />
           
           <ReferenceLine y={threshold} stroke="#D97706" strokeDasharray="3 3" />

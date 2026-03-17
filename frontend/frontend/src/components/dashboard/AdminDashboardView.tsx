@@ -151,20 +151,20 @@ export function AdminDashboardView() {
     ];
   }, [ayItems, currentAY]);
 
-  const thCol = "text-[10px] font-mono text-white/30 uppercase tracking-widest py-3 px-4 text-left";
+  const thCol = "text-[10px] font-mono text-gray-700 uppercase tracking-widest py-3 px-4 text-left font-medium";
   const tdCol = "py-3 px-4 text-sm font-mono";
 
   if (loading) {
     return (
       <div className="flex flex-col gap-10 pb-32">
-        <p className="text-white/60">Loading admin dashboard…</p>
+        <p className="text-gray-600">Loading admin dashboard…</p>
       </div>
     );
   }
   if (error) {
     return (
       <div className="flex flex-col gap-10 pb-32">
-        <p className="text-alert">{error}</p>
+        <p className="text-red-600">{error}</p>
       </div>
     );
   }
@@ -173,30 +173,30 @@ export function AdminDashboardView() {
     <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col gap-0 pb-32">
 
       {/* ── PAGE HEADER ── */}
-      <motion.section variants={fadeSlideUp} className="pb-8 border-b border-white/5">
-        <p className="text-3xl font-display text-white mb-1">
-          Admin Hub: <span className="text-white/40">{user?.name?.split(" ")[0]}</span>
+      <motion.section variants={fadeSlideUp} className="pb-8 border-b border-gray-300">
+        <p className="text-3xl font-display text-gray-900 mb-1">
+          Admin Hub: <span className="text-gray-600">{user?.name?.split(" ")[0]}</span>
         </p>
 
         {/* A1-01: system status line */}
-        <p className="text-xs font-mono text-white/30 mt-3">
-          <span className="text-attain">API: Healthy</span>
+        <p className="text-xs font-mono text-gray-700 mt-3">
+          <span className="text-green-700 font-medium">API: Healthy</span>
           {" | "}
-          <span className="text-attain">DB: Connected</span>
+          <span className="text-green-700 font-medium">DB: Connected</span>
           {" | "}
-          <span className="text-white/50">Active Users: —</span>
+          <span className="text-gray-600">Active Users: —</span>
           {" | "}
-          <span className="text-white/30">Last Backup: 2 hours ago</span>
+          <span className="text-gray-500">Last Backup: 2 hours ago</span>
         </p>
       </motion.section>
 
       {/* ── A1-02: AY STATUS TABLE ── */}
-      <motion.section variants={fadeSlideUp} className="py-8 border-b border-white/5">
-        <h2 className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-5">Academic Year Status</h2>
+      <motion.section variants={fadeSlideUp} className="py-8 border-b border-gray-300">
+        <h2 className="text-[10px] font-mono text-gray-700 uppercase tracking-widest mb-5 font-medium">Academic Year Status</h2>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
+              <tr className="border-b border-gray-300 bg-gray-100">
                 {["AY Code", "Status", "Start", "End", "Locked By", "Locked On"].map(h => (
                   <th key={h} className={thCol}>{h}</th>
                 ))}
@@ -204,15 +204,15 @@ export function AdminDashboardView() {
             </thead>
             <tbody>
               {ayRows.map((row, i) => (
-                <tr key={row.ay} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className={`${tdCol} text-white font-medium`}>{row.ay}{i === 0 && <span className="ml-2 text-[9px] text-brand uppercase tracking-widest">current</span>}</td>
-                  <td className={`${tdCol} ${row.status === "active" ? "text-attain" : row.status === "locked" ? "text-amber-400" : "text-white/30"}`}>
+                <tr key={row.ay} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                  <td className={`${tdCol} text-gray-900 font-medium`}>{row.ay}{i === 0 && <span className="ml-2 text-[9px] text-blue-600 uppercase tracking-widest font-medium">current</span>}</td>
+                  <td className={`${tdCol} ${row.status === "active" ? "text-green-700 font-medium" : row.status === "locked" ? "text-amber-700 font-medium" : "text-gray-500"}`}>
                     {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
                   </td>
-                  <td className={`${tdCol} text-white/40`}>{row.startDate}</td>
-                  <td className={`${tdCol} text-white/40`}>{row.endDate}</td>
-                  <td className={`${tdCol} text-white/40`}>{row.lockedBy || "—"}</td>
-                  <td className={`${tdCol} text-white/40`}>{row.lockedOn || "—"}</td>
+                  <td className={`${tdCol} text-gray-700`}>{row.startDate}</td>
+                  <td className={`${tdCol} text-gray-700`}>{row.endDate}</td>
+                  <td className={`${tdCol} text-gray-700`}>{row.lockedBy || "—"}</td>
+                  <td className={`${tdCol} text-gray-700`}>{row.lockedOn || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -221,17 +221,17 @@ export function AdminDashboardView() {
       </motion.section>
 
       {/* ── A1-03: USER COUNT TABLE ── */}
-      <motion.section variants={fadeSlideUp} className="py-8 border-b border-white/5">
+      <motion.section variants={fadeSlideUp} className="py-8 border-b border-gray-300">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-[10px] font-mono text-white/30 uppercase tracking-widest">User Counts</h2>
-          <Link href="/admin/users" className="text-[10px] font-mono text-brand hover:text-white transition-colors uppercase tracking-widest flex items-center gap-1">
+          <h2 className="text-[10px] font-mono text-gray-700 uppercase tracking-widest font-medium">User Counts</h2>
+          <Link href="/admin/users" className="text-[10px] font-mono text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-widest flex items-center gap-1 font-medium">
             Manage Users <ChevronRight className="w-3 h-3" />
           </Link>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
+              <tr className="border-b border-gray-300 bg-gray-100">
                 {["Role", "Total Users", "Active", "Inactive", "New This Week"].map(h => (
                   <th key={h} className={thCol}>{h}</th>
                 ))}
@@ -239,12 +239,12 @@ export function AdminDashboardView() {
             </thead>
             <tbody>
               {userStats.map(row => (
-                <tr key={row.role} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className={`${tdCol} text-white/60`}>{row.role}</td>
-                  <td className={`${tdCol} text-white`}>{row.total}</td>
-                  <td className={`${tdCol} text-attain`}>{row.active}</td>
-                  <td className={`${tdCol} ${row.inactive > 0 ? "text-alert" : "text-white/20"}`}>{row.inactive}</td>
-                  <td className={`${tdCol} ${row.newThisWeek > 0 ? "text-brand" : "text-white/20"}`}>{row.newThisWeek}</td>
+                <tr key={row.role} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                  <td className={`${tdCol} text-gray-700 font-medium`}>{row.role}</td>
+                  <td className={`${tdCol} text-gray-900 font-medium`}>{row.total}</td>
+                  <td className={`${tdCol} text-green-700 font-medium`}>{row.active}</td>
+                  <td className={`${tdCol} ${row.inactive > 0 ? "text-red-700 font-medium" : "text-gray-500"}`}>{row.inactive}</td>
+                  <td className={`${tdCol} ${row.newThisWeek > 0 ? "text-blue-700 font-medium" : "text-gray-500"}`}>{row.newThisWeek}</td>
                 </tr>
               ))}
             </tbody>
@@ -253,12 +253,12 @@ export function AdminDashboardView() {
       </motion.section>
 
       {/* ── A1-04: DEPT PROGRESS TABLE ── */}
-      <motion.section variants={fadeSlideUp} className="py-8 border-b border-white/5">
-        <h2 className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-5">Department Progress</h2>
+      <motion.section variants={fadeSlideUp} className="py-8 border-b border-gray-300">
+        <h2 className="text-[10px] font-mono text-gray-700 uppercase tracking-widest mb-5 font-medium">Department Progress</h2>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
+              <tr className="border-b border-gray-300 bg-gray-100">
                 {["Dept", "Courses", "CO Gen %", "Marks Approved %", "Avg PO Att %", "Open Alerts"].map(h => (
                   <th key={h} className={thCol}>{h}</th>
                 ))}
@@ -266,15 +266,15 @@ export function AdminDashboardView() {
             </thead>
             <tbody>
               {deptRows.length === 0 ? (
-                <tr><td colSpan={6} className="py-8 px-4 text-white/20 text-xs italic">No department data.</td></tr>
+                <tr><td colSpan={6} className="py-8 px-4 text-gray-500 text-xs italic">No department data.</td></tr>
               ) : deptRows.map(row => (
-                <tr key={row.dept} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className={`${tdCol} text-white/60`}>{row.dept}</td>
-                  <td className={`${tdCol} text-white/40`}>{row.courses}</td>
-                  <td className={`${tdCol} ${row.coGenPct === 100 ? "text-attain" : row.coGenPct >= 50 ? "text-amber-400" : "text-alert"}`}>{row.coGenPct}%</td>
-                  <td className={`${tdCol} ${row.marksApprPct >= 80 ? "text-attain" : row.marksApprPct >= 50 ? "text-amber-400" : row.marksApprPct > 0 ? "text-alert" : "text-white/20"}`}>{row.marksApprPct}%</td>
-                  <td className={`${tdCol} ${row.poAvg >= 60 ? "text-attain" : row.poAvg >= 40 ? "text-amber-400" : row.poAvg > 0 ? "text-alert" : "text-white/20"}`}>{row.poAvg > 0 ? `${row.poAvg}%` : "—"}</td>
-                  <td className={`${tdCol} ${row.openAlerts > 0 ? "text-alert font-bold" : "text-white/20"}`}>{row.openAlerts}</td>
+                <tr key={row.dept} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                  <td className={`${tdCol} text-gray-700 font-medium`}>{row.dept}</td>
+                  <td className={`${tdCol} text-gray-700`}>{row.courses}</td>
+                  <td className={`${tdCol} ${row.coGenPct === 100 ? "text-green-700 font-medium" : row.coGenPct >= 50 ? "text-amber-700 font-medium" : "text-red-700 font-medium"}`}>{row.coGenPct}%</td>
+                  <td className={`${tdCol} ${row.marksApprPct >= 80 ? "text-green-700 font-medium" : row.marksApprPct >= 50 ? "text-amber-700 font-medium" : row.marksApprPct > 0 ? "text-red-700 font-medium" : "text-gray-500"}`}>{row.marksApprPct}%</td>
+                  <td className={`${tdCol} ${row.poAvg >= 60 ? "text-green-700 font-medium" : row.poAvg >= 40 ? "text-amber-700 font-medium" : row.poAvg > 0 ? "text-red-700 font-medium" : "text-gray-500"}`}>{row.poAvg > 0 ? `${row.poAvg}%` : "—"}</td>
+                  <td className={`${tdCol} ${row.openAlerts > 0 ? "text-red-700 font-bold" : "text-gray-500"}`}>{row.openAlerts}</td>
                 </tr>
               ))}
             </tbody>
@@ -283,20 +283,20 @@ export function AdminDashboardView() {
       </motion.section>
 
       {/* ── A1-05: PENDING ACTIONS ── */}
-      <motion.section variants={fadeSlideUp} className="py-8 border-b border-white/5">
-        <h2 className="text-[10px] font-mono text-white/30 uppercase tracking-widest mb-5">Pending Actions</h2>
+      <motion.section variants={fadeSlideUp} className="py-8 border-b border-gray-300">
+        <h2 className="text-[10px] font-mono text-gray-700 uppercase tracking-widest mb-5 font-medium">Pending Actions</h2>
         {pendingActions.length === 0 ? (
-          <p className="text-sm text-white/20 italic">No pending system actions. All tasks are complete.</p>
+          <p className="text-sm text-gray-500 italic">No pending system actions. All tasks are complete.</p>
         ) : (
-          <ol className="flex flex-col divide-y divide-white/5">
+          <ol className="flex flex-col divide-y divide-gray-300">
             {pendingActions.map((item, i) => (
               <li key={i} className="flex items-center justify-between py-3 gap-4">
                 <div className="flex items-center gap-4 min-w-0">
-                  <span className="text-xs font-mono text-white/20 w-5 shrink-0">{i + 1}.</span>
-                  <span className="text-sm text-white/60">{item.text}</span>
+                  <span className="text-xs font-mono text-gray-500 w-5 shrink-0">{i + 1}.</span>
+                  <span className="text-sm text-gray-700">{item.text}</span>
                 </div>
                 <Link href={item.href}
-                  className="text-xs font-mono text-brand hover:text-white transition-colors uppercase tracking-widest shrink-0 flex items-center gap-1">
+                  className="text-xs font-mono text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-widest shrink-0 flex items-center gap-1 font-medium">
                   Go <ChevronRight className="w-3 h-3" />
                 </Link>
               </li>
@@ -306,10 +306,10 @@ export function AdminDashboardView() {
       </motion.section>
 
       {/* ── A1-06: EVENTS FEED ── */}
-      <motion.section variants={fadeSlideUp} className="py-8 border-b border-white/5">
+      <motion.section variants={fadeSlideUp} className="py-8 border-b border-gray-300">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-[10px] font-mono text-white/30 uppercase tracking-widest">System Events</h2>
-          <span className="text-[10px] font-mono text-white/20">
+          <h2 className="text-[10px] font-mono text-gray-700 uppercase tracking-widest font-medium">System Events</h2>
+          <span className="text-[10px] font-mono text-gray-600">
             Page {auditPage + 1} of {Math.max(totalPages, 1)} · {allEvents.length} events
           </span>
         </div>
@@ -317,7 +317,7 @@ export function AdminDashboardView() {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
+              <tr className="border-b border-gray-300 bg-gray-100">
                 {["Timestamp", "User", "Action", "Result"].map(h => (
                   <th key={h} className={thCol}>{h}</th>
                 ))}
@@ -325,18 +325,18 @@ export function AdminDashboardView() {
             </thead>
             <tbody>
               {pageEvents.length === 0 ? (
-                <tr><td colSpan={4} className="py-8 px-4 text-white/20 text-xs italic">No events recorded yet.</td></tr>
+                <tr><td colSpan={4} className="py-8 px-4 text-gray-500 text-xs italic">No events recorded yet.</td></tr>
               ) : pageEvents.map(entry => (
-                <tr key={entry.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                  <td className="py-3 px-4 text-[10px] font-mono text-white/30 whitespace-nowrap">{entry.timestamp}</td>
-                  <td className="py-3 px-4 text-xs font-mono text-white/40 whitespace-nowrap">{entry.userId}</td>
-                  <td className="py-3 px-4 text-xs text-white/40">{entry.action}</td>
+                <tr key={entry.id} className="border-b border-gray-300 hover:bg-gray-50 transition-colors">
+                  <td className="py-3 px-4 text-[10px] font-mono text-gray-600 whitespace-nowrap">{entry.timestamp}</td>
+                  <td className="py-3 px-4 text-xs font-mono text-gray-700 whitespace-nowrap">{entry.userId}</td>
+                  <td className="py-3 px-4 text-xs text-gray-700">{entry.action}</td>
                   <td className="py-3 px-4 text-[10px] font-mono">
                     {entry.result === "failure"
-                      ? <span className="text-alert">Failure</span>
+                      ? <span className="text-red-700 font-medium">Failure</span>
                       : entry.result === "success"
-                        ? <span className="text-attain">Success</span>
-                        : <span className="text-white/20">—</span>
+                        ? <span className="text-green-700 font-medium">Success</span>
+                        : <span className="text-gray-500">—</span>
                     }
                   </td>
                 </tr>
@@ -350,15 +350,15 @@ export function AdminDashboardView() {
             <button
               onClick={() => setAuditPage(p => Math.max(0, p - 1))}
               disabled={auditPage === 0}
-              className="text-xs font-mono text-white/30 hover:text-white disabled:opacity-20 transition-colors uppercase tracking-widest"
+              className="text-xs font-mono text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-colors uppercase tracking-widest font-medium"
             >
               ← Prev
             </button>
-            <span className="text-[10px] font-mono text-white/20">{auditPage + 1} / {totalPages}</span>
+            <span className="text-[10px] font-mono text-gray-600">{auditPage + 1} / {totalPages}</span>
             <button
               onClick={() => setAuditPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={auditPage >= totalPages - 1}
-              className="text-xs font-mono text-white/30 hover:text-white disabled:opacity-20 transition-colors uppercase tracking-widest"
+              className="text-xs font-mono text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-colors uppercase tracking-widest font-medium"
             >
               Next →
             </button>
@@ -373,12 +373,12 @@ export function AdminDashboardView() {
             onClick={() => setErrExpanded(e => !e)}
             className="flex items-center gap-3 w-full text-left"
           >
-            <h2 className="text-[10px] font-mono text-alert uppercase tracking-widest">
+            <h2 className="text-[10px] font-mono text-red-700 uppercase tracking-widest font-medium">
               System Errors (Last 24h) — {errorEntries.length} event{errorEntries.length !== 1 ? "s" : ""}
             </h2>
             {errExpanded
-              ? <ChevronUp className="w-3.5 h-3.5 text-alert" />
-              : <ChevronDown className="w-3.5 h-3.5 text-alert" />
+              ? <ChevronUp className="w-3.5 h-3.5 text-red-700" />
+              : <ChevronDown className="w-3.5 h-3.5 text-red-700" />
             }
           </button>
 
@@ -386,7 +386,7 @@ export function AdminDashboardView() {
             <div className="mt-4 overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-white/5">
+                  <tr className="border-b border-gray-300 bg-gray-100">
                     {["Error Type", "Count", "First Occurrence"].map(h => (
                       <th key={h} className={thCol}>{h}</th>
                     ))}
@@ -394,10 +394,10 @@ export function AdminDashboardView() {
                 </thead>
                 <tbody>
                   {errorGroups.map(eg => (
-                    <tr key={eg.type} className="border-b border-white/5">
-                      <td className="py-3 px-4 text-sm font-mono text-alert">{eg.type}</td>
-                      <td className="py-3 px-4 text-sm font-mono text-white/60">{eg.count}</td>
-                      <td className="py-3 px-4 text-xs font-mono text-white/30">{eg.first}</td>
+                    <tr key={eg.type} className="border-b border-gray-300 hover:bg-gray-50">
+                      <td className="py-3 px-4 text-sm font-mono text-red-700 font-medium">{eg.type}</td>
+                      <td className="py-3 px-4 text-sm font-mono text-gray-700">{eg.count}</td>
+                      <td className="py-3 px-4 text-xs font-mono text-gray-600">{eg.first}</td>
                     </tr>
                   ))}
                 </tbody>

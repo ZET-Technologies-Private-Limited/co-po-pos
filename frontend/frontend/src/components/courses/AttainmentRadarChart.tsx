@@ -11,9 +11,9 @@ export function AttainmentRadarChart({ data }: AttainmentRadarChartProps) {
     <div className="w-full h-[350px] relative">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
-          <PolarGrid stroke="rgba(255,255,255,0.1)" />
-          <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12, fontFamily: 'monospace' }} />
-          <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }} />
+          <PolarGrid stroke="rgba(107,114,128,0.2)" />
+          <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(75,85,99,0.8)', fontSize: 12, fontFamily: 'monospace' }} />
+          <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: 'rgba(107,114,128,0.5)', fontSize: 10 }} />
           
           <Radar 
             name="Previous Semester" 
@@ -36,10 +36,10 @@ export function AttainmentRadarChart({ data }: AttainmentRadarChartProps) {
             animationBegin={500}
           />
           
-          <Legend wrapperStyle={{ fontSize: '12px', opacity: 0.8 }} />
+          <Legend wrapperStyle={{ fontSize: '12px', color: 'rgba(75,85,99,0.8)', opacity: 1 }} />
           <Tooltip 
-             contentStyle={{ backgroundColor: '#0F172A', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '12px' }}
-             itemStyle={{ color: '#F8FAFC' }}
+             contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#D1D5DB', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}
+             itemStyle={{ color: '#1F2937', fontWeight: 'bold' }}
           />
         </RadarChart>
       </ResponsiveContainer>

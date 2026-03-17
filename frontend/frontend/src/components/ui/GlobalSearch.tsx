@@ -59,42 +59,42 @@ export function GlobalSearch() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.97 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className="fixed top-[15vh] left-1/2 -translate-x-1/2 z-[160] w-full max-w-xl bg-[#0D1829] border border-white/10 shadow-2xl"
+            className="fixed top-[15vh] left-1/2 -translate-x-1/2 z-[160] w-full max-w-xl bg-white border border-gray-300 shadow-2xl"
           >
             {/* Input */}
-            <div className="flex items-center gap-4 px-6 py-5 border-b border-white/10">
-              <Search className="w-5 h-5 text-white/40 shrink-0" />
+            <div className="flex items-center gap-4 px-6 py-5 border-b border-gray-300">
+              <Search className="w-5 h-5 text-gray-500 shrink-0" />
               <input
                 ref={inputRef}
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search pages, courses, features..."
-                className="flex-1 bg-transparent text-white text-lg placeholder-white/25 outline-none font-light"
+                className="flex-1 bg-transparent text-gray-900 text-lg placeholder-gray-400 outline-none font-light"
               />
-              {query && <button onClick={() => setQuery("")} className="text-white/30 hover:text-white"><X className="w-4 h-4" /></button>}
-              <kbd className="hidden sm:block text-xs font-mono text-white/20 border border-white/10 px-2 py-1">ESC</kbd>
+              {query && <button onClick={() => setQuery("")} className="text-gray-400 hover:text-gray-900"><X className="w-4 h-4" /></button>}
+              <kbd className="hidden sm:block text-xs font-mono text-gray-600 border border-gray-300 px-2 py-1">ESC</kbd>
             </div>
 
             {/* Results */}
             <div className="py-2 max-h-[400px] overflow-y-auto">
               {filtered.length === 0 ? (
-                <div className="py-8 text-center text-white/30 font-mono text-sm">No results found</div>
+                <div className="py-8 text-center text-gray-500 font-mono text-sm">No results found</div>
               ) : (
                 filtered.map((item, i) => (
                   <button key={item.href} onClick={() => go(item.href)}
-                    className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-colors ${i === selected ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"}`}>
-                    <item.icon className={`w-4 h-4 shrink-0 ${i === selected ? "text-brand" : "text-white/30"}`} />
+                    className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-colors ${i === selected ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                    <item.icon className={`w-4 h-4 shrink-0 ${i === selected ? "text-blue-600" : "text-gray-500"}`} />
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${i === selected ? "text-white" : "text-white/70"}`}>{item.label}</p>
-                      <p className="text-white/30 text-xs font-light truncate">{item.desc}</p>
+                      <p className={`text-sm font-medium ${i === selected ? "text-gray-900" : "text-gray-700"}`}>{item.label}</p>
+                      <p className="text-gray-600 text-xs font-light truncate">{item.desc}</p>
                     </div>
-                    <ArrowRight className={`w-4 h-4 shrink-0 transition-opacity ${i === selected ? "opacity-60" : "opacity-0"}`} />
+                    <ArrowRight className={`w-4 h-4 shrink-0 transition-opacity ${i === selected ? "opacity-100" : "opacity-0"}`} />
                   </button>
                 ))
               )}
             </div>
 
-            <div className="px-6 py-3 border-t border-white/5 flex items-center gap-4 text-xs font-mono text-white/20">
+            <div className="px-6 py-3 border-t border-gray-300 flex items-center gap-4 text-xs font-mono text-gray-600">
               <span>↑↓ navigate</span>
               <span>↵ select</span>
               <span>ESC close</span>

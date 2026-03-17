@@ -95,8 +95,8 @@ export default function CoursePage() {
       <AccessGate feature="dashboard" deny="lock">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
-            <BookOpen className="w-8 h-8 text-brand animate-pulse mx-auto mb-3" />
-            <p className="text-white/50 text-sm">Loading course...</p>
+            <BookOpen className="w-8 h-8 text-blue-600 animate-pulse mx-auto mb-3" />
+            <p className="text-gray-600 text-sm">Loading course...</p>
           </div>
         </div>
       </AccessGate>

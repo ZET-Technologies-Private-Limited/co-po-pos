@@ -172,11 +172,11 @@ export function ProfileMenu() {
           </div>
 
           {/* Logout */}
-          <div className="border-t border-white/10 py-1">
+          <div className="border-t border-gray-200 py-1">
             <button
               role="menuitem"
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-5 py-3 text-sm text-alert/70 hover:text-alert hover:bg-alert/5 transition-colors focus:outline-none focus:bg-alert/5"
+              className="w-full flex items-center gap-3 px-5 py-3 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors focus:outline-none focus:bg-red-50"
             >
               <LogOut className="w-4 h-4" aria-hidden="true" /> Logout
             </button>
